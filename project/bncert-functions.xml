@@ -1,0 +1,465 @@
+<component>
+    <name>bncertfunctions</name>
+    <show>0</show>
+    <functionDefinitionList>
+        <!-- Validation actions -->
+        <actionDefinition name="bncertValidateInstalldir">
+            <actionList>
+                <setInstallerVariable name="valid_webserver" value="0"/>
+                <setInstallerVariable name="valid_webserver_permissions" value="0"/>
+                <setInstallerVariable name="valid_webserver_conf" value="0"/>
+                <!-- Check files are available -->
+                <setInstallerVariable name="valid_webserver" value="1">
+                    <ruleList>
+                        <bncertIsWebServerValid/>
+                    </ruleList>
+                 </setInstallerVariable>
+                <!-- Check files are available -->
+                <setInstallerVariable name="valid_webserver_permissions" value="1">
+                    <ruleList>
+                        <isTrue value="${valid_webserver}"/>
+                        <bncertIsWebServerPermissionsValid/>
+                    </ruleList>
+                </setInstallerVariable>
+                <!-- Check the web server configuration is valid -->
+                <setInstallerVariable name="valid_webserver_conf" value="1">
+                    <ruleList>
+                        <isTrue value="${valid_webserver}"/>
+                        <isTrue value="${valid_webserver_permissions}"/>
+                        <bncertIsWebServerConfigurationValid/>
+                    </ruleList>
+                </setInstallerVariable>
+                <!-- Warnings -->
+                <baseGetStackKey installdir="${installdir}" variable="stack_key"/>
+                <setInstallerVariable name="enable_redirections" value="1"/>
+                <!-- Some stacks don't react well to redirections, mainly when they require the exact domain to be configured -->
+                <actionGroup>
+                    <actionList>
+                        <baseGetStackName installdir="${installdir}" variable="stack_name"/>
+                        <setInstallerVariable name="stack_name" value="Bitnami ${stack_key} stack">
+                            <ruleList>
+                                <stringTest text="${stack_name}" type="empty"/>
+                            </ruleList>
+                        </setInstallerVariable>
+                        <setInstallerVariable name="enable_redirections" value="0"/>
+                        <!-- We want the user to know the specific stack, so they don't start thinking this is a generic error -->
+                        <!-- Since we don't have the fullname, transforming the first letter in the app to uppercase should be enough -->
+                        <stringModify logic="totitle" text="${stack_key}" variable="str"/>
+                        <showWarning text="Custom redirections are not supported in the ${stack_name}. This tool will not be able to enable/disable redirections."/>
+                    </actionList>
+                    <ruleList>
+                        <stringTest text="${stack_key}" type="not_empty"/>
+                        <compareText text=" ${bitnami_stacks_with_disabled_redirections} " logic="contains" value=" ${stack_key} "/>
+                    </ruleList>
+                </actionGroup>
+                <!-- We won't support adding redirections if the users manually add any by themselves, in order to avoid possible issues -->
+                <actionGroup>
+                    <actionList>
+                        <setInstallerVariable name="enable_redirections" value="0"/>
+                        <showWarning text="Custom redirections were detected in your web server configuration files. This tool will not be able to enable/disable redirections."/>
+                    </actionList>
+                    <ruleList>
+                        <isTrue value="${enable_redirections}"/>
+                        <isTrue value="${valid_webserver_conf}"/>
+                        <ruleGroup>
+                            <ruleEvaluationLogic>or</ruleEvaluationLogic>
+                            <ruleList>
+                                <bncertIsCustomHttpsRedirectionEnabled/>
+                                <bncertIsCustomNonWwwToWwwRedirectionEnabled/>
+                                <bncertIsCustomWwwToNonWwwRedirectionEnabled/>
+                            </ruleList>
+                        </ruleGroup>
+                    </ruleList>
+                </actionGroup>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertValidateDomain">
+            <parameterList>
+                <stringParameter name="domain"/>
+            </parameterList>
+            <actionList>
+                <setInstallerVariable name="ignore_public_ip_warning" value="no"/>
+                <!-- Obtain public IP address, but only once -->
+                <actionGroup>
+                    <actionList>
+                        <getPublicIpAddress variable="machine_public_ipaddr" progressText="Determining machine public IP address"/>
+                        <actionGroup>
+                            <actionList>
+                                <showQuestion title="Could not detect public IP address" text="&#xA;The public IP address for this machine could not be detected. A public IP address will be required for Let's Encrypt to verify that your domains point to this machine. Do you want to proceed anyways?" variable="ignore_public_ip_warning" default="no"/>
+                                <throwError text="Please check public IP configuration for this machine. For more info see: https://docs.bitnami.com/general/faq/configuration/configure-static-address/">
+                                    <ruleList>
+                                        <isFalse value="${ignore_public_ip_warning}"/>
+                                    </ruleList>
+                                </throwError>
+                            </actionList>
+                            <ruleList>
+                                <stringTest text="${machine_public_ipaddr}" type="empty"/>
+                            </ruleList>
+                        </actionGroup>
+                    </actionList>
+                    <ruleList>
+                        <isTrue value="${perform_public_ip_validation}"/>
+                        <stringTest text="${machine_public_ipaddr}" type="empty"/>
+                        <isFalse value="${ignore_public_ip_warning}"/>
+                    </ruleList>
+                </actionGroup>
+                <!-- Now validate the domain DNS and ensure the IP matches -->
+                <if>
+                    <conditionRuleList>
+                        <hostValidation host="${domain}" type="hostname" condition="is_not_valid"/>
+                    </conditionRuleList>
+                    <actionList>
+                        <throwError text="The domain '${domain}' does not resolve, please fix its DNS entries or remove it."/>
+                    </actionList>
+                    <elseActionList>
+                        <throwError text="The domain '${domain}' resolves to a different IP address than the one detected for this machine, which is '${machine_public_ipaddr}'. Please fix its DNS entries or remove it. For more info see: https://docs.bitnami.com/general/faq/configuration/configure-custom-domain/">
+                            <ruleList>
+                                <validateDomainIpAddressResolution domain="${domain}" ipAddress="${machine_public_ipaddr}" negate="1"/>
+                                <isTrue value="${perform_public_ip_validation}"/>
+                            </ruleList>
+                        </throwError>
+                    </elseActionList>
+                </if>
+            </actionList>
+        </actionDefinition>
+        <!-- Parameters for updating metadata -->
+        <actionDefinition name="bncertDetectMissingDomains">
+            <parameterList>
+                <stringParameter name="domains"/>
+                <stringParameter name="variable"/>
+            </parameterList>
+            <actionList>
+                <globalVariables names="${domainsVariable}"/>
+                <tclEval>
+                    <code><![CDATA[
+set domains [installbuilder::substText {${domains}}]
+set variable [installbuilder::substText {${variable}}]
+set missing_domains {}
+proc listContains {list element} {
+    return [expr [lsearch -exact $list $element] != -1]
+}
+foreach domain $domains {
+    if {[regexp {^www\.(.*)} $domain - nonWwwDomain]} {
+        if {![listContains $domains $nonWwwDomain]} {
+            lappend missing_domains $nonWwwDomain
+        }
+    } else {
+        set wwwDomain www.$domain
+        if {![listContains $domains $wwwDomain]} {
+            lappend missing_domains $wwwDomain
+        }
+    }
+}
+installbuilder::setVariable $variable $missing_domains
+]]></code>
+                </tclEval>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertAddCommonChangesToPerform">
+            <actionList>
+                <!-- Stop web server (added as first element) -->
+                <setInstallerVariable name="changes_to_perform_metadata" value="&quot;Stop web server&quot; ${changes_to_perform_metadata}">
+                    <ruleList>
+                        <isTrue value="${manage_services}"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <!-- Server name -->
+                <setInstallerVariable name="changes_to_perform_metadata" value="${changes_to_perform_metadata} &quot;Configure web server name to: ${server_name}&quot;">
+                    <ruleList>
+                        <isTrue value="${configure_server_name}"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <!-- Redirections -->
+                <setInstallerVariableFromRegEx name="non_www_domain" pattern="^(www\.)?(.*)$" substitution="\2" text="${server_name}"/>
+                <setInstallerVariable name="https_redirection_text" value="HTTP to HTTPS redirection (example: redirect http://${non_www_domain} to https://${non_www_domain})"/>
+                <setInstallerVariable name="nonwww_to_www_redirection_text" value="non-www to www redirection (example: redirect ${non_www_domain} to www.${non_www_domain})"/>
+                <setInstallerVariable name="www_to_nonwww_redirection_text" value="www to non-www redirection (example: redirect www.${non_www_domain} to ${non_www_domain})"/>
+                <!-- First disable the ones we want to, after that we can enable the rest -->
+                <actionGroup>
+                    <actionList>
+                        <!-- Disable redirections -->
+                        <!-- Note that we won't show the text if we enable a mutually exclusive redirection -->
+                        <setInstallerVariable name="changes_to_perform_metadata" value="${changes_to_perform_metadata} &quot;Disable ${https_redirection_text}&quot;">
+                            <ruleList>
+                                <bncertIsHttpsRedirectionEnabled/>
+                                <isFalse value="${enable_https_redirection}"/>
+                            </ruleList>
+                        </setInstallerVariable>
+                        <setInstallerVariable name="changes_to_perform_metadata" value="${changes_to_perform_metadata} &quot;Disable ${nonwww_to_www_redirection_text}&quot;">
+                            <ruleList>
+                                <isTrue value="${parameter(additional_configuration).parameter(enable_nonwww_to_www_redirection).ask}"/>
+                                <bncertIsNonWwwToWwwRedirectionEnabled/>
+                                <isFalse value="${enable_nonwww_to_www_redirection}"/>
+                                <isFalse value="${enable_www_to_nonwww_redirection}"/>
+                            </ruleList>
+                        </setInstallerVariable>
+                        <setInstallerVariable name="changes_to_perform_metadata" value="${changes_to_perform_metadata} &quot;Disable ${www_to_nonwww_redirection_text}&quot;">
+                            <ruleList>
+                                <isTrue value="${parameter(additional_configuration).parameter(enable_www_to_nonwww_redirection).ask}"/>
+                                <bncertIsWwwToNonWwwRedirectionEnabled/>
+                                <isFalse value="${enable_nonwww_to_www_redirection}"/>
+                                <isFalse value="${enable_www_to_nonwww_redirection}"/>
+                            </ruleList>
+                        </setInstallerVariable>
+                        <!-- Enable redirections -->
+                        <foreach values="https nonwww_to_www www_to_nonwww" variables="redirection">
+                            <actionList>
+                                <setInstallerVariable name="changes_to_perform_metadata" value="${changes_to_perform_metadata} &quot;Enable ${${redirection}_redirection_text}&quot;">
+                                    <ruleList>
+                                        <isTrue value="${enable_${redirection}_redirection}"/>
+                                    </ruleList>
+                                </setInstallerVariable>
+                            </actionList>
+                        </foreach>
+                    </actionList>
+                    <ruleList>
+                        <isTrue value="${enable_redirections}"/>
+                    </ruleList>
+                </actionGroup>
+                <!-- Start services -->
+                <setInstallerVariable name="changes_to_perform_metadata" value="${changes_to_perform_metadata} &quot;Start web server once all changes have been performed&quot;">
+                    <ruleList>
+                        <isTrue value="${manage_services}"/>
+                    </ruleList>
+                </setInstallerVariable>
+            </actionList>
+        </actionDefinition>
+        <!-- Actions for populating parameters depending on metadata -->
+        <actionDefinition name="bncertPopulateChangesToPerform">
+            <actionList>
+                <setInstallerVariable name="changes_to_perform_text" value=""/>
+                <setInstallerVariable name="entry_number" value="0"/>
+                <foreach variables="entry" values="${changes_to_perform_metadata}">
+                    <actionList>
+                        <mathExpression text="${entry_number}+1" variable="entry_number"/>
+                        <setInstallerVariable name="changes_to_perform_text" value="${changes_to_perform_text}&#xA;${entry_number}. ${entry}"/>
+                    </actionList>
+                </foreach>
+                <stringModify text="${changes_to_perform_text}" logic="trim" variable="changes_to_perform_text"/>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertPopulateReport">
+            <actionList>
+                <!-- Errors -->
+                <actionGroup>
+                    <actionList>
+                        <setInstallerVariable name="parameter(custom_final_page).title" value="Error"/>
+                        <setInstallerVariable name="parameter(custom_final_page).explanation" value="An error occurred when applying configurations."/>
+                        <setInstallerVariable name="parameter(custom_final_page).parameter(report_text).explanation" value="The web server configuration was left unchanged. There was an error in the new configuration, so it was reverted."/>
+                    </actionList>
+                    <ruleList>
+                        <isTrue value="${report_aborted}"/>
+                    </ruleList>
+                </actionGroup>
+                <!-- Non-fatal errors -->
+                <actionGroup>
+                    <actionList>
+                        <!-- Skipped/failed configuration steps -->
+                        <setInstallerVariable name="parameter(custom_final_page).title" value="Some errors occurred"/>
+                        <setInstallerVariable name="parameter(custom_final_page).explanation" value="The configuration was applied, but some of the changes could not be applied. Find the details below."/>
+                    </actionList>
+                    <ruleList>
+                        <isFalse value="${report_aborted}"/>
+                        <stringTest text="${report_failures_metadata}" type="not_empty"/>
+                    </ruleList>
+                </actionGroup>
+                <!-- List of failed steps -->
+                <actionGroup>
+                    <actionList>
+                        <setInstallerVariable name="report_text" value="${report_text}Failed steps:"/>
+                        <foreach variables="entry" values="${report_failures_metadata}">
+                            <actionList>
+                                <setInstallerVariable name="report_text" value="${report_text}&#xA;* ${entry}"/>
+                            </actionList>
+                        </foreach>
+                        <setInstallerVariable name="report_text" value="${report_text}&#xA;&#xA;"/>
+                    </actionList>
+                    <ruleList>
+                        <stringTest text="${report_failures_metadata}" type="not_empty"/>
+                    </ruleList>
+                </actionGroup>
+                <!-- Steps that succeeded but could not be reverted (e.g. certificates created but we don't revoke them) -->
+                <actionGroup>
+                    <actionList>
+                        <setInstallerVariable name="report_text" value="${report_text}Some steps were not reverted. Run the tool again to apply them:"/>
+                        <foreach variables="entry" values="${report_nonreversible_metadata}">
+                            <actionList>
+                                <setInstallerVariable name="report_text" value="${report_text}&#xA;* ${entry}"/>
+                            </actionList>
+                        </foreach>
+                        <setInstallerVariable name="report_text" value="${report_text}&#xA;&#xA;"/>
+                    </actionList>
+                    <ruleList>
+                        <isTrue value="${report_aborted}"/>
+                        <stringTest text="${report_nonreversible_metadata}" type="not_empty"/>
+                    </ruleList>
+                </actionGroup>
+                <!-- Backup files -->
+                <actionGroup>
+                    <actionList>
+                        <setInstallerVariable name="report_text" value="${report_text}Backup files:"/>
+                        <foreach variables="original_file backup_file" values="${restore_metadata}">
+                            <actionList>
+                                <setInstallerVariable name="report_text" value="${report_text}&#xA;* ${backup_file}"/>
+                            </actionList>
+                        </foreach>
+                        <setInstallerVariable name="report_text" value="${report_text}&#xA;&#xA;"/>
+                    </actionList>
+                    <ruleList>
+                        <isFalse value="${report_aborted}"/>
+                        <stringTest text="${restore_metadata}" type="not_empty"/>
+                    </ruleList>
+                </actionGroup>
+                <!-- Log file -->
+                <!-- InstallBuilder is not allowing change to the log filename if we don't run through the original final page -->
+                <setInstallerVariable name="log_file" value="${system_temp_directory}/${project.shortName}-${current_run_id}.log"/>
+                <renameFile origin="${installer_installation_log}" destination="${log_file}"/>
+                <setInstallerVariable name="report_text" value="${report_text}Find more details in the log file:&#xA;&#xA;${log_file}&#xA;&#xA;"/>
+                <!-- Add Bitnami Support link info for non-GUI runs -->
+                <setInstallerVariable name="link_parameter" value="parameter(custom_final_page).parameter(bitnami_support_link)"/>
+                <setInstallerVariable name="report_text" value="${report_text}${${link_parameter}.explanation}&#xA;&#xA;${${link_parameter}.description}&#xA;">
+                    <ruleList>
+                        <compareText text="${installer_ui}" logic="does_not_equal" value="gui"/>
+                    </ruleList>
+                </setInstallerVariable>
+            </actionList>
+        </actionDefinition>
+        <!-- Grouped actions for a specific stage, to avoid duplicating code for different installation modes -->
+        <actionDefinition name="bncertPostInstalldirActions">
+            <actionList>
+                <setInstallerVariable name="installdir" value="${installdir.unix}"/>
+                <!-- Run the auto-updater now that we know the installdir -->
+                <runUpdater targetDir="${installdir}" ruleEvaluationLogic="or">
+                    <ruleList>
+                        <platformTest type="linux"/>
+                    </ruleList>
+                </runUpdater>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertAbortActions">
+            <actionList>
+                <showProgressDialog title="Reverting changes">
+                    <actionList>
+                        <bncertRestoreWebServerConfiguration progressText="Restoring web server configuration"/>
+                        <actionGroup>
+                            <actionList>
+                                <bncertStopWebServer progressText="Stopping web server"/>
+                                <bncertStartWebServer progressText="Starting web server"/>
+                            </actionList>
+                            <ruleList>
+                                <isTrue value="${manage_services}"/>
+                            </ruleList>
+                        </actionGroup>
+                    </actionList>
+                </showProgressDialog>
+            </actionList>
+        </actionDefinition>
+        <!-- Miscellaneous -->
+        <!-- Detect server name based on the redirections that were enabled -->
+        <actionDefinition name="bncertDetectServerName">
+            <parameterList>
+                <stringParameter name="domains"/>
+                <booleanParameter name="isWww"/>
+                <booleanParameter name="isNoWww"/>
+                <stringParameter name="serverNameVariable"/>
+            </parameterList>
+            <actionList>
+                <if>
+                    <conditionRuleEvaluationLogic>or</conditionRuleEvaluationLogic>
+                    <conditionRuleList>
+                        <ruleGroup>
+                            <ruleList>
+                                <isFalse value="${isWww}"/>
+                                <isFalse value="${isNoWww}"/>
+                            </ruleList>
+                        </ruleGroup>
+                        <!-- When redirections are disabled, assume the main domain is the first one that was passed -->
+                        <isFalse value="${enable_redirections}"/>
+                    </conditionRuleList>
+                    <actionList>
+                        <!-- Detect the first domain (if none of the redirections above are enabled) -->
+                        <baseGetFirstElement list="${domains}" variable="${serverNameVariable}"/>
+                    </actionList>
+                    <elseActionList>
+                        <!-- Detect server name based on the redirections that were enabled -->
+                        <!-- Validations are in place to ensure both non-www-to-www and www-to-non-www redirections can't be enabled at once -->
+                        <!-- Also, these redirections cannot be enabled if a www domain or a non-www domain are not provided -->
+                        <foreach variables="domain" values="${domains}">
+                            <actionList>
+                                <actionGroup>
+                                    <actionList>
+                                        <setInstallerVariable name="${serverNameVariable}" value="${domain}"/>
+                                        <break/>
+                                    </actionList>
+                                    <ruleEvaluationLogic>or</ruleEvaluationLogic>
+                                    <ruleList>
+                                        <!-- Detect the first www domain -->
+                                        <ruleGroup>
+                                            <ruleList>
+                                                <regExMatch pattern="^www\.(.*)$" logic="matches" text="${domain}"/>
+                                                <isTrue value="${isWww}"/>
+                                            </ruleList>
+                                        </ruleGroup>
+                                        <!-- Detect the first non-www domain -->
+                                        <ruleGroup>
+                                            <ruleList>
+                                                <regExMatch pattern="^www\.(.*)$" logic="does_not_match" text="${domain}"/>
+                                                <isTrue value="${isNoWww}"/>
+                                            </ruleList>
+                                        </ruleGroup>
+                                    </ruleList>
+                                </actionGroup>
+                            </actionList>
+                        </foreach>
+                    </elseActionList>
+                </if>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertRunBnconfig">
+            <parameterList>
+                <stringParameter name="hostname"/>
+            </parameterList>
+            <actionList>
+                <setInstallerVariable name="bnconfig_failure" value="0"/>
+                <if>
+                    <conditionRuleList>
+                        <fileExists path="${installdir}/configure_app_domain"/>
+                    </conditionRuleList>
+                    <actionList>
+                        <!-- The 'configure_app_domain' script was introduced for Blacksmith VMs, but was also added for IB VMs for consistency -->
+                        <!-- It not only takes care for configuring domains appropriately, but also disabling the setting of new IP address when rebooting -->
+                        <runProgram program="${installdir}/configure_app_domain" programArguments="--domain ${hostname}" abortOnError="0"/>
+                        <setInstallerVariable name="bnconfig_failure" value="1">
+                            <ruleList>
+                                <compareValues value1="${program_exit_code}" logic="does_not_equal" value2="0"/>
+                            </ruleList>
+                        </setInstallerVariable>
+                    </actionList>
+                    <elseActionList>
+                        <baseGlob pattern="${installdir}/apps/*/bnconfig{,.disabled}" variable="bnconfig_file_list"/>
+                        <foreach variables="bnconfig_file" values="${bnconfig_file_list}">
+                            <actionList>
+                                <runProgram program="${bnconfig_file}" programArguments="--machine_hostname ${hostname}" abortOnError="0"/>
+                                <setInstallerVariable name="bnconfig_failure" value="1">
+                                    <ruleList>
+                                        <compareValues value1="${program_exit_code}" logic="does_not_equal" value2="0"/>
+                                    </ruleList>
+                                </setInstallerVariable>
+                                <renameFile origin="${bnconfig_file}" destination="${bnconfig_file}.disabled">
+                                    <ruleList>
+                                        <regExMatch pattern="/bnconfig$" logic="matches" text="${bnconfig_file}"/>
+                                    </ruleList>
+                                </renameFile>
+                            </actionList>
+                        </foreach>
+                    </elseActionList>
+                </if>
+                <setInstallerVariable name="report_failures_metadata" value="${report_failures_metadata} &quot;Changing server name: Error setting domain name&quot;">
+                    <ruleList>
+                        <isTrue value="${bnconfig_failure}"/>
+                    </ruleList>
+                </setInstallerVariable>
+            </actionList>
+        </actionDefinition>
+    </functionDefinitionList>
+</component>

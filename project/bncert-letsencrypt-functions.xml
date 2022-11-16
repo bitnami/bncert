@@ -1,0 +1,454 @@
+<componentGroup>
+    <name>bncertletsencryptfunctions</name>
+    <show>0</show>
+    <functionDefinitionList>
+        <!-- Parameters for updating metadata -->
+        <actionDefinition name="bncertAddLetsEncryptModeChanges">
+            <actionList>
+                <!-- Let's Encrypt -->
+                <if>
+                    <conditionRuleList>
+                        <isTrue value="${use_existing_letsencrypt_certificate}"/>
+                    </conditionRuleList>
+                    <actionList>
+                        <setInstallerVariable name="changes_to_perform_metadata" value="${changes_to_perform_metadata} &quot;Configure web server to use an existing Let's Encrypt certificate and renew: ${existing_letsencrypt_certificate_crt}&quot;"/>
+                    </actionList>
+                    <elseActionList>
+                        <setInstallerVariable name="changes_to_perform_metadata" value="${changes_to_perform_metadata} &quot;Revoke existing Let's Encrypt certificate: ${existing_letsencrypt_certificate_crt}&quot;">
+                            <ruleList>
+                                <isTrue value="${revoke_existing_letsencrypt_certificate}"/>
+                            </ruleList>
+                        </setInstallerVariable>
+                        <setInstallerVariable name="changes_to_perform_metadata" value="${changes_to_perform_metadata} &quot;Configure web server to use a free Let's Encrypt certificate for the domains: ${domains}&quot;"/>
+                    </elseActionList>
+                </if>
+                <!-- Cron job -->
+                <setInstallerVariable name="changes_to_perform_metadata" value="${changes_to_perform_metadata} &quot;Configure a cron job to automatically renew the certificate each month&quot;">
+                    <ruleList>
+                        <isTrue value="${configure_cron}"/>
+                    </ruleList>
+                </setInstallerVariable>
+            </actionList>
+        </actionDefinition>
+        <!-- Rules -->
+        <ruleDefinition name="bncertIsCronConfigured">
+            <actionList>
+                <setInstallerVariable name="sudo_prefix" value=""/>
+                <setInstallerVariable name="sudo_prefix" value="sudo ">
+                    <ruleList>
+                        <userTest username="bitnami"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <runCron cronArguments="-l" stdoutVariable="cron_stdout"/>
+            </actionList>
+            <ruleList>
+                <compareText text="${cron_stdout}" logic="contains" value="# bncert-autorenew"/>
+            </ruleList>
+        </ruleDefinition>
+        <ruleDefinition name="bncertIsLegoUpdated">
+            <actionList>
+                <runProgram program="${lego_binary}" programArguments="--version" abortOnError="0" showMessageOnError="0"/>
+                <setInstallerVariableFromRegEx name="existing_lego_version" pattern=".*lego version ([0-9.]+) .*" substitution="\1" text="${program_stdout}"/>
+            </actionList>
+            <ruleList>
+                <regExMatch text="${existing_lego_version}" logic="matches" pattern="^[0-9]+\.[0-9]+\.[0-9]+$"/>
+                <compareVersions version1="${existing_lego_version}" logic="greater_or_equal" version2="${bundled_lego_version}"/>
+            </ruleList>
+        </ruleDefinition>
+        <!-- Validations -->
+        <actionDefinition name="bncertValidateLetsEncryptCertificate">
+            <actionList>
+                <setInstallerVariable name="use_existing_letsencrypt_certificate" value="0"/>
+                <setInstallerVariable name="revoke_existing_letsencrypt_certificate" value="0"/>
+                <baseGetFirstElement list="${domains}" variable="first_domain"/>
+                <setInstallerVariable name="existing_letsencrypt_certificate_crt" value="${certificates_dir}/${first_domain}.crt"/>
+                <setInstallerVariable name="existing_letsencrypt_certificate_key" value="${certificates_dir}/${first_domain}.key"/>
+                <actionGroup>
+                    <actionList>
+                        <throwError text="A certificate was found but it is missing its associated .key file:&#xA;${existing_letsencrypt_certificate_crt}&#xA;Please fix this issue manually by adding the .key file, or remove the .crt file.">
+                            <ruleList>
+                                <fileTest condition="not_exists" path="${existing_letsencrypt_certificate_key}"/>
+                            </ruleList>
+                        </throwError>
+                        <getDomainsFromCertificate path="${existing_letsencrypt_certificate_crt}" domainsVariable="detected_certificate_domains"/>
+                        <throwError text="Could not get domains from existing certificate ${existing_letsencrypt_certificate_crt}!&#xA;Please enter a different domain list, or revoke it: https://docs.bitnami.com/general/how-to/understand-bncert/#manually-revoking-an-existing-certificate ">
+                            <ruleList>
+                                <stringTest text="${detected_certificate_domains}" type="empty"/>
+                            </ruleList>
+                        </throwError>
+                        <!-- If a certificate was detected, we will not allow users to add additional domains afterwards -->
+                        <!-- Automatically detect if the certificate did not include the domains specified in 'additional_domains' -->
+                        <actionGroup>
+                            <actionList>
+                                <setInstallerVariable name="use_existing_letsencrypt_certificate" value="1"/>
+                                <!-- If we use an existing certificate, we cannot add new domains -->
+                                <setInstallerVariable name="missing_domains" value=""/>
+                                <!-- If no www domain was added into the certificate we cannot enable any of the redirections -->
+                                <foreach variables="key" values="enable_nonwww_to_www_redirection enable_www_to_nonwww_redirection">
+                                    <actionList>
+                                        <setInstallerVariable name="${key}" value="0"/>
+                                        <setInstallerVariable name="parameter(additional_configuration).parameter(${key}).ask" value="0"/>
+                                    </actionList>
+                                    <ruleList>
+                                        <isWwwDomainProvided list="${domains}" negate="1"/>
+                                    </ruleList>
+                                </foreach>
+                            </actionList>
+                            <ruleList>
+                                <listMatch list1="${domains}" list2="${detected_certificate_domains}"/>
+                            </ruleList>
+                        </actionGroup>
+                        <!-- Automatically detect if the certificate included the domains specified in 'additional_domains' -->
+                        <actionGroup>
+                            <actionList>
+                                <setInstallerVariable name="use_existing_letsencrypt_certificate" value="1"/>
+                                <setInstallerVariable name="domains" value="${domains} ${missing_domains}"/>
+                                <setInstallerVariable name="missing_domains" value=""/>
+                            </actionList>
+                            <ruleList>
+                                <isFalse value="${use_existing_letsencrypt_certificate}"/>
+                                <listMatch list1="${domains} ${missing_domains}" list2="${detected_certificate_domains}"/>
+                            </ruleList>
+                        </actionGroup>
+                        <if>
+                            <conditionRuleList>
+                                <isTrue value="${use_existing_letsencrypt_certificate}"/>
+                            </conditionRuleList>
+                            <actionList>
+                                <showWarning text="A certificate for the list of domains you entered already exists. It will be used instead of generating a new one."/>
+                            </actionList>
+                            <elseActionList>
+                                <showQuestion title="Certificate domain mismatch" text="A certificate was found at ${existing_letsencrypt_certificate_crt}&#xA;It is registered for a different set of domains: ${detected_certificate_domains}.&#xA;Do you want to disable/revoke the existing certificate and create a new one?" variable="revoke_existing_letsencrypt_certificate" default="no"/>
+                                <throwError text="Please fix the list of domains!">
+                                    <ruleList>
+                                        <isFalse value="${revoke_existing_letsencrypt_certificate}"/>
+                                    </ruleList>
+                                </throwError>
+                            </elseActionList>
+                        </if>
+                    </actionList>
+                    <ruleList>
+                        <fileExists path="${existing_letsencrypt_certificate_crt}"/>
+                    </ruleList>
+                </actionGroup>
+            </actionList>
+        </actionDefinition>
+        <!-- Lego-related actions -->
+        <actionDefinition name="bncertFormatLegoOpts">
+            <parameterList>
+                <stringParameter name="action"/>
+                <stringParameter name="challenge" default="tls"/>
+                <stringParameter name="variable"/>
+            </parameterList>
+            <actionList>
+                <globalVariables names="${variable}"/>
+                <setInstallerVariable name="args" value="--path ${lego_dir} --email=&quot;${email}&quot;"/>
+                <setInstallerVariable name="args" value="${args} --accept-tos">
+                    <ruleList>
+                        <compareText text="${action}" logic="does_not_equal" value="renew"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <if>
+                    <conditionRuleList>
+                        <compareText text="${challenge}" logic="equals" value="http"/>
+                    </conditionRuleList>
+                    <actionList>
+                        <!-- We only use HTTP for renew because it could fail due to the user's configuration -->
+                        <!-- In such cases we show them a warning, but they're able to generate certificates properly -->
+                        <setInstallerVariable name="args" value="${args} --http --http-timeout 30 --http.webroot ${lego_app_dir}"/>
+                    </actionList>
+                    <elseActionList>
+                        <setInstallerVariable name="args" value="${args} --tls"/>
+                    </elseActionList>
+                </if>
+                <foreach variables="domain" values="${domains}">
+                    <actionList>
+                        <setInstallerVariable name="args" value="${args} --domains=${domain}"/>
+                        <!-- Revoke and renew actions only need the main domain -->
+                        <break>
+                            <ruleList>
+                                <compareText text="${action}" logic="does_not_equal" value="run"/>
+                            </ruleList>
+                        </break>
+                    </actionList>
+                </foreach>
+                <setInstallerVariable name="args" value="${args} --server=https://acme-staging-v02.api.letsencrypt.org/directory">
+                    <ruleList>
+                        <isTrue value="${use_staging}"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <!-- Adding the 'user-agent' option, to aid Let's Encrypt in checking problematic use cases related to Bitnami installations -->
+                <!-- https://github.com/bitnami/vms/issues/43, https://github.com/go-acme/lego/issues/1663 -->
+                <setInstallerVariable name="args" value="${args} --user-agent bitnami-bncert/${project.version}"/>
+                <setInstallerVariable name="${variable}" value="${args} ${action}"/>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertRunLego">
+            <parameterList>
+                <stringParameter name="action"/>
+            </parameterList>
+            <actionList>
+                <setInstallerVariable name="lego_action_text" value="creating">
+                    <ruleList>
+                        <compareText text="${action}" logic="equals" value="run"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <setInstallerVariable name="lego_action_text" value="revoking">
+                    <ruleList>
+                        <compareText text="${action}" logic="equals" value="revoke"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <setInstallerVariable name="lego_action_text" value="renewing">
+                    <ruleList>
+                        <compareText text="${action}" logic="equals" value="renew"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <bncertFormatLegoOpts action="${action}" variable="lego_args"/>
+                <!-- Adding the 'no-random-sleep' option only at runtime, to avoid overloading the Let's Encrypt servers -->
+                <!-- https://github.com/bitnami/vms/issues/43, https://github.com/go-acme/lego/issues/1656 -->
+                <setInstallerVariable name="lego_args" value="${lego_args} --no-random-sleep">
+                    <ruleList>
+                        <compareText text="${action}" logic="equals" value="renew"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <runProgram program="${lego_binary}" programArguments="${lego_args}" abortOnError="0" showMessageOnError="0">
+                    <onErrorActionList>
+                        <grepText nocase="1" pattern="error" text="${program_stdout}" variable="lego_errors"/>
+                        <stringModify text="${lego_errors}" logic="trim" variable="lego_errors"/>
+                        <tailText text="${program_stdout}" lines="2" variable="lego_errors_tail"/>
+                        <stringModify text="${lego_errors_tail}" logic="trim" variable="lego_errors_tail"/>
+                        <setInstallerVariable name="lego_errors" value="${lego_errors_tail}&#xA;${program_stderr}">
+                            <ruleList>
+                                <stringTest text="${lego_errors}" type="empty"/>
+                            </ruleList>
+                        </setInstallerVariable>
+                        <showText>
+                            <text>
+An error occurred ${lego_action_text} certificates with Let's Encrypt:
+
+${lego_errors}
+
+Please check our documentation and support forums, we'll be happy to help!
+
+* Bitnami Documentation: ${bitnami_docs_url}
+* Bitnami Community: ${bitnami_support_url}
+</text>
+                        </showText>
+                    </onErrorActionList>
+                </runProgram>
+                <if>
+                    <conditionRuleList>
+                        <compareText text="${program_exit_code}" logic="equals" value="0"/>
+                    </conditionRuleList>
+                    <actionList>
+                        <!-- This message will only be shown if the configuration is restored to the original state -->
+                        <setInstallerVariable name="report_nonreversible_metadata" value="${report_nonreversible_metadata} &quot;The original Let's Encrypt certificate was revoked, so it is not valid anymore&quot;">
+                            <ruleList>
+                                <compareText text="${action}" logic="equals" value="revoke"/>
+                            </ruleList>
+                        </setInstallerVariable>
+                        <setInstallerVariable name="report_nonreversible_metadata" value="${report_nonreversible_metadata} &quot;The Let's Encrypt certificate was generated, but not revoked&quot;">
+                            <ruleList>
+                                <compareText text="${action}" logic="equals" value="run"/>
+                            </ruleList>
+                        </setInstallerVariable>
+                    </actionList>
+                    <elseActionList>
+                        <!-- Abort and force restore of configuration -->
+                        <setInstallerVariable name="report_aborted" value="1"/>
+                        <setInstallerVariable name="report_failures_metadata" value="${report_failures_metadata} &quot;Running Let's Encrypt: Error ${lego_action_text} certificates&quot;"/>
+                    </elseActionList>
+                </if>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertRemoveCronEntries">
+            <actionList>
+                <setInstallerVariable name="sudo_prefix" value=""/>
+                <setInstallerVariable name="sudo_prefix" value="sudo ">
+                    <ruleList>
+                        <userTest username="bitnami"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <!-- We won't consider failures in this step as fatal -->
+                <removeCronEntries id="bncert-autorenew" exitCodeVariable="cron_exitcode"/>
+                <setInstallerVariable name="report_failures_metadata" value="${report_failures_metadata} &quot;Removing cron entry&quot;">
+                    <ruleList>
+                        <compareText text="${cron_exitcode}" logic="does_not_equal" value="0"/>
+                    </ruleList>
+                </setInstallerVariable>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertGenerateRandomNumber">
+            <parameterList>
+                <stringParameter name="variable"/>
+                <stringParameter name="min" default="0"/>
+                <stringParameter name="max"/>
+            </parameterList>
+            <actionList>
+                <globalVariables names="${variable}"/>
+                <mathExpression variable="${variable}" text="int(${min}+rand()*(${max}-${min}+1))"/>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertAddCronEntry">
+            <actionList>
+                <setInstallerVariable name="sudo_prefix" value=""/>
+                <setInstallerVariable name="sudo_prefix" value="sudo ">
+                    <ruleList>
+                        <userTest username="bitnami"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <bncertFormatLegoOpts action="renew" challenge="http" variable="lego_args"/>
+                <!-- Randomize the certificate renewal time, to avoid overloading the Let's Encrypt servers -->
+                <!-- https://github.com/bitnami/vms/issues/43 -->
+                <bncertGenerateRandomNumber variable="minute" min="0" max="59"/>
+                <bncertGenerateRandomNumber variable="hour" max="23"/>
+                <setInstallerVariable name="cron_entry" value="${minute} ${hour} * * * ${sudo_prefix}${lego_binary} ${lego_args} &amp;&amp; ${sudo_prefix}${web_server_reload_command}"/>
+                <addCronEntry id="bncert-autorenew" entry="${cron_entry}" exitCodeVariable="cron_exitcode"/>
+                <actionGroup>
+                    <actionList>
+                        <setInstallerVariable name="report_aborted" value="1"/>
+                        <setInstallerVariable name="report_failures_metadata" value="${report_failures_metadata} &quot;Adding cron entry&quot;"/>
+                    </actionList>
+                    <ruleList>
+                        <compareText text="${cron_exitcode}" logic="does_not_equal" value="0"/>
+                    </ruleList>
+                </actionGroup>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertConfigureLetsEncryptChallengeDir">
+            <actionList>
+                <!-- Variables used by Apache base functions are different than the ones used by this project -->
+                <globalVariables names="web_server_configuration_directory letsencrypt_installation_directory"/>
+                <setInstallerVariable name="web_server_configuration_directory" value="${web_server_conf_dir}"/>
+                <setInstallerVariable name="letsencrypt_installation_directory" value="${lego_app_dir}"/>
+                <bncertWebServerConfigureApp appDirectory="${lego_app_dir}" appWebDirectory="${lego_app_dir}/.well-known"/>
+                <createDirectory path="${lego_app_dir}/.well-known"/>
+                <deleteFile path="${lego_app_dir}/conf/httpd-vhosts.conf"/>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertCreateLetsEncryptCertificates">
+            <actionList>
+                <baseGetFirstElement list="${domains}" variable="first_domain"/>
+                <!-- Create new certificates with Lego (or renew existing ones) -->
+                <if>
+                    <conditionRuleList>
+                        <isTrue value="${use_existing_letsencrypt_certificate}"/>
+                    </conditionRuleList>
+                    <actionList>
+                        <bncertRunLego action="renew" abortOnError="0"/>
+                    </actionList>
+                    <elseActionList>
+                        <bncertRunLego action="revoke" abortOnError="0">
+                            <ruleList>
+                                <isTrue value="${revoke_existing_letsencrypt_certificate}"/>
+                            </ruleList>
+                        </bncertRunLego>
+                        <bncertRunLego action="run" abortOnError="0">
+                            <ruleList>
+                                <isFalse value="${report_aborted}"/>
+                            </ruleList>
+                        </bncertRunLego>
+                    </elseActionList>
+                </if>
+                <!-- Check that Lego was executed properly -->
+                <actionGroup>
+                    <actionList>
+                        <throwError abortOnError="0" text="Something went wrong when creating the certificates, and there is not any valid one at the certificates folder ${certificates_dir}"/>
+                        <setInstallerVariable name="report_failures_metadata" value="${report_failures_metadata} &quot;Creating Let's Encrypt certificate: Certificates were not created&quot;"/>
+                        <setInstallerVariable name="report_aborted" value="1"/>
+                    </actionList>
+                    <ruleList>
+                        <fileTest condition="not_exists" path="${certificates_dir}/${first_domain}.crt"/>
+                        <isFalse value="${report_aborted}"/>
+                    </ruleList>
+                </actionGroup>
+                <!-- If it succeeded, fix permissions and configure web server to use those certificates -->
+                <actionGroup>
+                    <actionList>
+                        <!-- Fix permissions for certificates -->
+                        <changePermissions permissions="755" files="${certificates_dir}"/>
+                        <changePermissions permissions="644" files="${certificates_dir}/${first_domain}.*"/>
+                        <!-- Configure web server to use the new certificates -->
+                        <bncertConfigureCertificates keyFile="${certificates_dir}/${first_domain}.key" crtFile="${certificates_dir}/${first_domain}.crt"/>
+                    </actionList>
+                    <ruleList>
+                        <isFalse value="${report_aborted}"/>
+                    </ruleList>
+                </actionGroup>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertPerformActionsForLetsEncryptMode">
+            <actionList>
+                <showProgressDialog title="Configuring server">
+                    <actionList>
+                        <createDirectory path="${lego_dir}"/>
+                        <unpackFile component="lego" folder="lego" origin="lego" destination="${lego_binary}" progressText="Extracting Lego">
+                            <ruleList>
+                                <bncertIsLegoUpdated negate="1"/>
+                            </ruleList>
+                        </unpackFile>
+                        <bncertConfigureLetsEncryptChallengeDir/>
+                        <bncertCreateLetsEncryptCertificates progressText="Configuring Let's Encrypt certificates">
+                            <ruleList>
+                                <isFalse value="${disable_letsencrypt_certificate_generation}"/>
+                            </ruleList>
+                        </bncertCreateLetsEncryptCertificates>
+                        <!-- Fix permissions so the "bitnami" user can run cron jobs -->
+                        <baseRecursiveChown owner="bitnami" files="${lego_dir}"/>
+                        <baseRecursiveChown owner="bitnami" files="${lego_app_dir}"/>
+                        <baseRecursiveChmod type="files" permissions="664" path="${lego_app_dir}"/>
+                        <baseRecursiveChmod type="directories" permissions="775" path="${lego_app_dir}"/>
+                    </actionList>
+                    <ruleList>
+                        <isFalse value="${report_aborted}"/>
+                    </ruleList>
+                </showProgressDialog>
+                <!-- Remove existing cron entries -->
+                <bncertRemoveCronEntries>
+                    <ruleList>
+                        <isFalse value="${report_aborted}"/>
+                        <isTrue value="${configure_cron}"/>
+                    </ruleList>
+                </bncertRemoveCronEntries>
+                <!-- Add new cron entries -->
+                <bncertAddCronEntry>
+                    <ruleList>
+                        <isFalse value="${report_aborted}"/>
+                        <isTrue value="${configure_cron}"/>
+                    </ruleList>
+                </bncertAddCronEntry>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertPerformFinalChecksForLetsEncryptMode">
+            <actionList>
+                <generateRandomValue length="10" variable="tmpFile"/>
+                <generateRandomValue length="10" variable="randomString"/>
+                <setInstallerVariable name="success" value="1"/>
+                <writeFile path="${lego_app_dir}/.well-known/${tmpFile}" text="${randomString}"/>
+                <foreach variables="domain" values="${domains}">
+                    <actionList>
+                        <httpGet abortOnError="0" showMessageOnError="0" url="https://${domain}/.well-known/${tmpFile}" filename="${system_temp_directory}/${tmpFile}"/>
+                        <readFile abortOnError="0" showMessageOnError="0" path="${system_temp_directory}/${tmpFile}" name="result"/>
+                        <actionGroup>
+                            <actionList>
+                                <logMessage text="Domain ${domain} did not pass HTTP challenge validation"/>
+                                <setInstallerVariable name="success" value="0"/>
+                                <setInstallerVariable name="report_failures_metadata" value="${report_failures_metadata} &quot;Creating Let's Encrypt certificate: Automatic renewal not working&quot;"/>
+                                <break/>
+                            </actionList>
+                            <ruleList>
+                                <compareText text="${result}" logic="does_not_contain" value="${randomString}"/>
+                            </ruleList>
+                        </actionGroup>
+                    </actionList>
+                </foreach>
+                <showWarning text="Certificates may not renew automatically, due to a web server configuration issue. For more information see: https://docs.bitnami.com/general/how-to/understand-bncert/#certificates-not-renewed-automatically">
+                    <ruleList>
+                        <isFalse value="${success}"/>
+                    </ruleList>
+                </showWarning>
+                <deleteFile path="${lego_app_dir}/.well-known/${tmpFile}"/>
+            </actionList>
+        </actionDefinition>
+    </functionDefinitionList>
+</componentGroup>

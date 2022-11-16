@@ -1,0 +1,564 @@
+<project>
+    <fullName>Bitnami HTTPS Configuration Tool</fullName>
+    <shortName>bncert</shortName>
+    <installerFilename>${product_shortname}.${platform_exec_suffix}</installerFilename>
+    <vendor>Bitnami</vendor>
+    <allowComponentSelection>0</allowComponentSelection>
+    <allowWindowResize>1</allowWindowResize>
+    <createUninstaller>0</createUninstaller>
+    <enableSslSupport>1</enableSslSupport>
+    <enableRollback>0</enableRollback>
+    <enableDebugger>0</enableDebugger>
+    <startMenuGroupName></startMenuGroupName>
+    <logoImage>images/vmtools.png</logoImage>
+    <leftImage>images/left.png</leftImage>
+    <height>393</height>
+    <disableSplashScreen>1</disableSplashScreen>
+    <!-- T32968 GUI modes are not tested and therefore may not work perfectly in all environments -->
+    <!-- We will allow GUI mode, but launch by default in text mode unless manually overridden -->
+    <defaultInstallationMode>text</defaultInstallationMode>
+    <!-- The only supported mode (configuring Let's Encrypt certificate) requires to bind to port 80 -->
+    <requireInstallationByRootUser>1</requireInstallationByRootUser>
+    <customLanguageFileList>
+        <language code="en" file="bncert-en.lng"/>
+    </customLanguageFileList>
+    <componentList>
+        <include file="base-functions.xml"/>
+        <include file="apache-functions.xml"/>
+        <include file="vmtools-functions.xml"/>
+        <include file="vmtools-auto-update.xml"/>
+        <!-- Functions and rules -->
+        <include file="bncert-webserver-apache-functions.xml"/>
+        <include file="bncert-webserver-functions.xml"/>
+        <include file="bncert-letsencrypt-functions.xml"/>
+        <include file="bncert-functions.xml"/>
+        <!-- Parameters for each possible user path -->
+        <include file="bncert-letsencrypt-mode.xml"/>
+    </componentList>
+    <preInstallationActionList>
+        <!-- TODO: Support unattended runs -->
+        <throwError text="Unattended mode is not supported yet. Please use --mode text or --mode gui instead.">
+            <ruleList>
+                <compareText text="${installer_ui}" logic="equals" value="unattended"/>
+            </ruleList>
+        </throwError>
+        <!-- For now we will identify each run with a timestamp -->
+        <createTimeStamp format="%Y%m%d%H%M" variable="current_run_id"/>
+        <!-- Autodetect installdir only if not provided by the user before -->
+        <dirName path="${installer_directory}" variable="installer_parent_directory"/>
+        <autodetectInstalldir paths="${installdir} ${installer_directory} ${installer_parent_directory} /opt/bitnami" variable="installdir"/>
+        <bncertValidateInstalldir>
+            <ruleList>
+                <isTrue value="${valid_installation_found}"/>
+            </ruleList>
+        </bncertValidateInstalldir>
+        <!-- If installdir was properly detected, we can proceed to run the updater and backup the configuration -->
+        <bncertPostInstalldirActions>
+            <ruleList>
+                <isTrue value="${valid_installation_found}"/>
+                <isTrue value="${valid_webserver}"/>
+                <isTrue value="${valid_webserver_permissions}"/>
+                <isTrue value="${valid_webserver_conf}"/>
+            </ruleList>
+        </bncertPostInstalldirActions>
+        <!-- Trim parameters to avoid whitespaces -->
+        <foreach values="domain" variables="parameterToTrim">
+            <actionList>
+                <stringModify text="${${parameterToTrim}}" logic="trim" variable="${parameterToTrim}"/>
+            </actionList>
+            <ruleList>
+                <stringTest text="${${parameterToTrim}}" type="not_empty"/>
+            </ruleList>
+        </foreach>
+        <!-- Check if server name is overridden via CLI parameters -->
+        <setInstallerVariable name="server_name_override" value="0"/>
+        <setInstallerVariable name="server_name_override" value="1">
+            <ruleList>
+                <stringTest text="${server_name}" type="not_empty"/>
+            </ruleList>
+        </setInstallerVariable>
+    </preInstallationActionList>
+    <parameterList>
+        <!-- Directory containing a Bitnami installation -->
+        <directoryParameter>
+            <name>installdir</name>
+            <title>Bitnami installation directory</title>
+            <explanation>Please type a directory that contains a Bitnami installation. ${platform_message}</explanation>
+            <description>Bitnami installation directory</description>
+            <allowEmptyValue>0</allowEmptyValue>
+            <mustExist>1</mustExist>
+            <validationActionList>
+                <!-- Ensure the installdir passes common validations to Bitnami installations -->
+                <autodetectInstalldir paths="${installdir.unix}" variable="installdir" supportXampp="0"/>
+                <throwError text="The path does not seem to contain a valid Bitnami installation. Make sure you have proper access rights, or choose a different directory.">
+                    <ruleList>
+                        <isFalse value="${valid_installation_found}"/>
+                    </ruleList>
+                </throwError>
+                <bncertValidateInstalldir/>
+                <!-- Ensure it contains a valid web server -->
+                <throwError text="${web_servers_supported_message} Make sure you are entering a proper path, or choose a different directory.">
+                    <ruleList>
+                        <isFalse value="${valid_webserver}"/>
+                    </ruleList>
+                </throwError>
+                <!-- Ensure the tool is executed with proper permissions -->
+                <throwError text="Missing read/write permissions to your installation. Make sure you have proper access rights, or choose a different directory.">
+                    <ruleList>
+                        <isFalse value="${valid_webserver_permissions}"/>
+                    </ruleList>
+                </throwError>
+                <!-- Ensure the web server configuration tests pass -->
+                <throwError text="The web server configuration check failed. Please fix the configuration error: ${webserver_conf_error}">
+                    <ruleList>
+                        <isFalse value="${valid_webserver_conf}"/>
+                    </ruleList>
+                </throwError>
+            </validationActionList>
+            <preShowPageActionList>
+                <populateInstalldirExplanation/>
+            </preShowPageActionList>
+            <postShowPageActionList>
+                <bncertPostInstalldirActions/>
+            </postShowPageActionList>
+            <ruleEvaluationLogic>or</ruleEvaluationLogic>
+            <ruleList>
+                <isFalse value="${valid_installation_found}"/>
+                <isFalse value="${valid_webserver}"/>
+                <isFalse value="${valid_webserver_permissions}"/>
+                <isFalse value="${valid_webserver_conf}"/>
+            </ruleList>
+        </directoryParameter>
+        <!-- Ask users which action they want to perform -->
+        <choiceParameter name="action" title="Action to perform" explanation="Please select an action to perform" cliOptionText="Select an action to perform" displayType="radiobuttons" default="create_letsencrypt_certificate">
+            <optionList>
+                <option value="create_letsencrypt_certificate" text="Configure a free HTTPS certificate with Let's Encrypt"/>
+                <!--
+                <option value="existing_certificate" text="Existing HTTPS certificate"/>
+                <option value="external_certificate" text="External provider HTTPS certificate (e.g. CloudFlare)"/>
+                <option value="no_certificate" text="Do not configure any certificate, only web server options"/>
+                -->
+            </optionList>
+            <preShowPageActionList>
+                <!-- Now that installdir is set, let's make sure it uses Unix format -->
+                <setInstallerVariable name="installdir" value="${installdir.unix}"/>
+            </preShowPageActionList>
+            <!-- TODO: Support more actions -->
+            <ask>0</ask>
+        </choiceParameter>
+        <!-- Domains -->
+        <parameterGroup name="domains_group" title="Domains" explanation="Please provide a valid space-separated list of domains for which you wish to configure your web server.">
+            <parameterList>
+                <stringParameter name="domains" description="Domain list" cliOptionText="List of domains (separated by spaces)"/>
+                <!-- Parameters hidden to the user -->
+                <stringParameter name="missing_domains" ask="0"/>
+            </parameterList>
+            <validationActionList>
+                <setInstallerVariableFromRegEx name="domains" pattern="[,;\s]+\s*" substitution=" " text="${domains}"/>
+                <!-- Reset values -->
+                <setInstallerVariable name="enable_https_redirection" value="${parameter(additional_configuration).parameter(enable_https_redirection).default}"/>
+                <setInstallerVariable name="enable_nonwww_to_www_redirection" value="${parameter(additional_configuration).parameter(enable_nonwww_to_www_redirection).default}"/>
+                <setInstallerVariable name="parameter(additional_configuration).parameter(enable_nonwww_to_www_redirection).ask" value="1"/>
+                <setInstallerVariable name="enable_www_to_nonwww_redirection" value="${parameter(additional_configuration).parameter(enable_www_to_nonwww_redirection).default}"/>
+                <setInstallerVariable name="parameter(additional_configuration).parameter(enable_www_to_nonwww_redirection).ask" value="1"/>
+                <!-- Domain pre-validation (formatting and prohibited domains) -->
+                <throwError text="Please enter valid domains">
+                    <ruleEvaluationLogic>or</ruleEvaluationLogic>
+                    <ruleList>
+                        <stringTest type="empty" text="${domains}"/>
+                        <regExMatch pattern="^([a-z0-9.-]+\.[a-z]+\s*)+$" logic="does_not_match" text="${domains}"/>
+                    </ruleList>
+                </throwError>
+                <throwError text="Using domains from services such as xip.io or nip.io are not allowed by this tool. Please enter valid domains.">
+                    <ruleList>
+                        <regExMatch pattern="[0-9].[nx]ip.io(\s|$)" logic="matches" text="${domains}"/>
+                    </ruleList>
+                </throwError>
+                <!-- Detect missing domains -->
+                <bncertDetectMissingDomains variable="missing_domains" domains="${domains}"/>
+                <!-- Check if certificates already exist, and add missing domains already set in the certificates -->
+                <!-- IMPORTANT: See https://letsencrypt.org/docs/rate-limits/ -->
+                <bncertValidateLetsEncryptCertificate>
+                    <ruleList>
+                        <compareText text="${action}" logic="equals" value="create_letsencrypt_certificate"/>
+                    </ruleList>
+                </bncertValidateLetsEncryptCertificate>
+                <!-- Ask whether to include missing domains -->
+                <actionGroup>
+                    <actionList>
+                        <showQuestion title="Add missing domains" text="The following domains were not included: ${missing_domains}. Do you want to add them?" variable="add_missing_domains" default="yes"/>
+                        <setInstallerVariable name="domains" value="${domains} ${missing_domains}">
+                            <ruleList>
+                                <isTrue value="${add_missing_domains}"/>
+                            </ruleList>
+                        </setInstallerVariable>
+                    </actionList>
+                    <ruleList>
+                        <stringTest text="${missing_domains}" type="not_empty"/>
+                    </ruleList>
+                </actionGroup>
+                <!-- Disable www/non-www redirections if no www or non-www domain has been provided -->
+                <actionGroup>
+                    <actionList>
+                        <showWarning text="No www domains (e.g. www.example.com) or non-www domains (e.g. www.example.com) have been provided, so the following redirections will be disabled: non-www to www, www to non-www."/>
+                        <setInstallerVariable name="enable_nonwww_to_www_redirection" value="0"/>
+                        <setInstallerVariable name="parameter(additional_configuration).parameter(enable_nonwww_to_www_redirection).ask" value="0"/>
+                        <setInstallerVariable name="enable_www_to_nonwww_redirection" value="0"/>
+                        <setInstallerVariable name="parameter(additional_configuration).parameter(enable_www_to_nonwww_redirection).ask" value="0"/>
+                    </actionList>
+                    <ruleList>
+                        <isTrue value="${enable_redirections}"/>
+                        <ruleGroup ruleEvaluationLogic="or">
+                            <ruleList>
+                                <isWwwDomainProvided list="${domains}" negate="1"/>
+                                <isNonWwwDomainProvided list="${domains}" negate="1"/>
+                            </ruleList>
+                        </ruleGroup>
+                    </ruleList>
+                </actionGroup>
+                <!-- Domain validation -->
+                <throwError text="Domains must have less than 64 characters">
+                    <ruleList>
+                        <regExMatch pattern="[a-z0-9.-]{64}" logic="matches" text="${domains}"/>
+                    </ruleList>
+                </throwError>
+                <showProgressDialog title="Validating domains">
+                    <actionList>
+                        <!-- Validate domain DNS entries -->
+                        <foreach variables="domain" values="${domains}">
+                            <actionList>
+                                <bncertValidateDomain domain="${domain}" progressText="Validating domain '${domain}'"/>
+                            </actionList>
+                            <ruleList>
+                                <isTrue value="${perform_dns_validation}"/>
+                            </ruleList>
+                        </foreach>
+                    </actionList>
+                </showProgressDialog>
+            </validationActionList>
+        </parameterGroup>
+        <!-- The below parameter is skipped, but we will return to it if the user rejects the list of proposed changes -->
+        <parameterGroup name="additional_configuration" title="Enable/disable redirections" explanation="Please select the redirections you wish to enable or disable on your Bitnami installation.">
+            <parameterList>
+                <booleanParameter name="enable_https_redirection" description="Enable HTTP to HTTPS redirection" default="1" displayStyle="checkbox-left"/>
+                <booleanParameter name="enable_nonwww_to_www_redirection" description="Enable non-www to www redirection" default="1" displayStyle="checkbox-left"/>
+                <booleanParameter name="enable_www_to_nonwww_redirection" description="Enable www to non-www redirection" default="0" displayStyle="checkbox-left"/>
+            </parameterList>
+            <preShowPageActionList>
+                <foreach variables="redirection" values="https nonwww_to_www www_to_nonwww">
+                    <actionList>
+                        <setInstallerVariable name="enable_${redirection}_redirection" value="0"/>
+                        <setInstallerVariable name="parameter(additional_configuration).parameter(enable_${redirection}_redirection).ask" value="0"/>
+                    </actionList>
+                    <ruleList>
+                        <isFalse value="${enable_redirections}"/>
+                    </ruleList>
+                </foreach>
+            </preShowPageActionList>
+            <validationActionList>
+                <throwError text="Non-www to www and www to non-www redirections cannot be enabled at once">
+                    <ruleList>
+                        <isTrue value="${enable_nonwww_to_www_redirection}"/>
+                        <isTrue value="${enable_www_to_nonwww_redirection}"/>
+                    </ruleList>
+                </throwError>
+            </validationActionList>
+            <ruleList>
+                <isTrue value="${enable_redirections}"/>
+            </ruleList>
+        </parameterGroup>
+        <parameterGroup name="changes_to_perform_group" title="Changes to perform" explanation="The following changes will be performed to your Bitnami installation:">
+            <parameterList>
+                <!-- This parameter is populated in bncertPopulateChanges -->
+                <infoParameter name="changes_to_perform_text">
+                    <ruleList>
+                        <compareText text="${installer_ui}" logic="equals" value="gui"/>
+                    </ruleList>
+                </infoParameter>
+                <labelParameter name="changes_to_perform_label" description="${changes_to_perform_text}">
+                    <ruleList>
+                        <compareText text="${installer_ui}" logic="does_not_equal" value="gui"/>
+                    </ruleList>
+                </labelParameter>
+                <booleanParameter name="agree_to_changes" description="Do you agree to these changes?" default="1" cliOptionShow="0"/>
+            </parameterList>
+            <preShowPageActionList>
+                <!-- Reset the page contents -->
+                <setInstallerVariable name="agree_to_changes" value="1"/>
+                <!-- Now we have a chance to configure default parameter values and actions to perform for the current mode -->
+                <bncertDetectServerName domains="${domains}" isWww="${enable_nonwww_to_www_redirection}" isNoWww="${enable_www_to_nonwww_redirection}" serverNameVariable="server_name">
+                    <ruleList>
+                        <!-- Allow users to customize the value as CLI option -->
+                        <isFalse value="${server_name_override}"/>
+                    </ruleList>
+                </bncertDetectServerName>
+                <!-- Update the info in this page -->
+                <setInstallerVariable name="changes_to_perform_metadata" value=""/>
+                <bncertAddLetsEncryptModeChanges>
+                    <ruleList>
+                        <compareText text="${action}" logic="equals" value="create_letsencrypt_certificate"/>
+                    </ruleList>
+                </bncertAddLetsEncryptModeChanges>
+                <bncertAddCommonChangesToPerform/>
+                <bncertPopulateChangesToPerform/>
+            </preShowPageActionList>
+            <validationActionList>
+                <showProgressDialog title="Performing validations">
+                    <actionList>
+                        <!-- Validate domain DNS entries -->
+                        <!-- This time we also validate automatically added domains (e.g. www.example.com if only example.com was added) -->
+                        <foreach variables="domain" values="${domains}">
+                            <actionList>
+                                <bncertValidateDomain domain="${domain}" progressText="Validating domain '${domain}'"/>
+                            </actionList>
+                            <ruleList>
+                                <isTrue value="${perform_dns_validation}"/>
+                            </ruleList>
+                        </foreach>
+                        <!-- We stop the web server at this point, in order to verify we can proceed with the setup -->
+                        <bncertStopWebServer webServerName="${web_server_name}" progressText="Stopping web server">
+                            <ruleList>
+                                <isTrue value="${manage_services}"/>
+                                <isFalse value="${dry_run}"/>
+                            </ruleList>
+                        </bncertStopWebServer>
+                    </actionList>
+                    <ruleList>
+                        <isTrue value="${agree_to_changes}"/>
+                    </ruleList>
+                </showProgressDialog>
+            </validationActionList>
+            <postShowPageActionList>
+                <!-- Force users to have privileges if needed -->
+                <throwError text="Cannot bind to port 80 and/or 443. These ports are used for Let's Encrypt to verify the domain DNS configuration. Please stop any services using those ports, and ensure your system user has permissions to bind to them.">
+                    <ruleList>
+                        <isTrue value="${agree_to_changes}"/>
+                        <compareText text="${action}" logic="equals" value="create_letsencrypt_certificate"/>
+                        <ruleGroup>
+                            <ruleEvaluationLogic>or</ruleEvaluationLogic>
+                            <ruleList>
+                                <portTest port="80" condition="cannot_bind"/>
+                                <portTest port="443" condition="cannot_bind"/>
+                            </ruleList>
+                        </ruleGroup>
+                    </ruleList>
+                </throwError>
+                <!-- Store the original next page here, as we will change it depending on user input -->
+                <setInstallerVariable name="changes_to_perform_next_page" value="${next_page}">
+                    <ruleList>
+                        <stringTest text="${changes_to_perform_next_page}" type="empty"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <if>
+                    <conditionRuleList>
+                        <isTrue value="${agree_to_changes}"/>
+                    </conditionRuleList>
+                    <actionList>
+                        <setInstallerVariable name="next_page" value="${changes_to_perform_next_page}"/>
+                    </actionList>
+                    <elseActionList>
+                        <setInstallerVariable name="next_page" value="domains_group"/>
+                    </elseActionList>
+                </if>
+            </postShowPageActionList>
+        </parameterGroup>
+        <parameterGroup name="perform_actions" title="Performing changes to your installation" explanation="The ${project.fullName} will perform any necessary actions to your Bitnami installation. This may take some time, please be patient.">
+            <postShowPageActionList>
+                <actionGroup>
+                    <actionList>
+                        <setInstallerVariable name="report_aborted" value="0"/>
+                        <!-- Backup configuration before proceeding -->
+                        <bncertBackupWebServerConfiguration/>
+                        <setInstallerVariable name="requires_restoring" value="1"/>
+                        <!-- We will perform changes that are most likely to break the sooner the possible -->
+                        <!-- This way we avoid the installation being modified if an error occurs and the user cancels -->
+                        <bncertPerformActionsForLetsEncryptMode>
+                            <ruleList>
+                                <isFalse value="${report_aborted}"/>
+                                <compareText text="${action}" logic="equals" value="create_letsencrypt_certificate"/>
+                            </ruleList>
+                        </bncertPerformActionsForLetsEncryptMode>
+                        <!-- Common actions: Server configuration and redirections -->
+                        <showProgressDialog title="Performing changes to web server configuration">
+                            <actionList>
+                                <actionGroup>
+                                    <actionList>
+                                        <bncertConfigureServerName serverName="${server_name}" progressText="Configuring server name"/>
+                                        <bncertRunBnconfig hostname="${server_name}"/>
+                                    </actionList>
+                                    <ruleList>
+                                        <isTrue value="${configure_server_name}"/>
+                                    </ruleList>
+                                </actionGroup>
+                                <!-- Apply web server configurations, as long as the user hasn't modified the configuration -->
+                                <actionGroup>
+                                    <actionList>
+                                        <!-- Disable configurations from previous runs -->
+                                        <logMessage text="Removing redirections and patches in web server configuration from previous runs"/>
+                                        <bncertDisableWebServerConfigurationPatches/>
+                                        <bncertDisableHttpsRedirection/>
+                                        <bncertDisableNonWwwToWwwRedirection/>
+                                        <bncertDisableWwwToNonWwwRedirection/>
+                                        <!-- Common patches for Bitnami config files, in order for the configuration to work in all stacks -->
+                                        <bncertEnableWebServerConfigurationPatches/>
+                                        <!-- Enable redirections -->
+                                        <bncertEnableHttpsRedirection progressText="Enabling HTTP to HTTPS redirection">
+                                            <ruleList>
+                                                <isTrue value="${enable_https_redirection}"/>
+                                            </ruleList>
+                                        </bncertEnableHttpsRedirection>
+                                        <bncertEnableNonWwwToWwwRedirection progressText="Enabling non-www to www redirection">
+                                            <ruleList>
+                                                <isTrue value="${enable_nonwww_to_www_redirection}"/>
+                                            </ruleList>
+                                        </bncertEnableNonWwwToWwwRedirection>
+                                        <bncertEnableWwwToNonWwwRedirection progressText="Enabling www to non-www redirection">
+                                            <ruleList>
+                                                <isTrue value="${enable_www_to_nonwww_redirection}"/>
+                                            </ruleList>
+                                        </bncertEnableWwwToNonWwwRedirection>
+                                    </actionList>
+                                    <ruleList>
+                                        <isFalse value="${report_aborted}"/>
+                                        <isTrue value="${enable_redirections}"/>
+                                    </ruleList>
+                                </actionGroup>
+                                <!-- Test web servers once configured, then start or restore configuration in case of failure -->
+                                <if progressText="Testing web server configuration">
+                                    <conditionRuleList>
+                                        <bncertIsWebServerConfigurationValid/>
+                                    </conditionRuleList>
+                                    <actionList>
+                                        <bncertStartWebServer abortOnError="0" webServerName="${web_server_name}" progressText="Starting web server">
+                                            <ruleList>
+                                                <isTrue value="${manage_services}"/>
+                                            </ruleList>
+                                        </bncertStartWebServer>
+                                        <setInstallerVariable name="requires_restoring" value="0"/>
+                                    </actionList>
+                                    <elseActionList>
+                                        <setInstallerVariable name="report_failures_metadata" value="${report_failures_metadata} &quot;Start web server: Configuration changes to the web server caused it to fail&quot;"/>
+                                        <setInstallerVariable name="report_aborted" value="1"/>
+                                    </elseActionList>
+                                </if>
+                                <!-- Check if the web server started -->
+                                <actionGroup progressText="Checking web server started">
+                                    <actionList>
+                                        <setInstallerVariable name="report_failures_metadata" value="${report_failures_metadata} &quot;Starting web server: Failed to start&quot;"/>
+                                        <setInstallerVariable name="report_aborted" value="1"/>
+                                    </actionList>
+                                    <ruleList>
+                                        <isFalse value="${report_aborted}"/>
+                                        <isServiceRunning service="${web_server_name}" negate="1"/>
+                                    </ruleList>
+                                </actionGroup>
+                                <!-- Let's Encrypt mode checks -->
+                                <bncertPerformFinalChecksForLetsEncryptMode>
+                                    <ruleList>
+                                        <isFalse value="${report_aborted}"/>
+                                        <compareText text="${action}" logic="equals" value="create_letsencrypt_certificate"/>
+                                    </ruleList>
+                                </bncertPerformFinalChecksForLetsEncryptMode>
+                            </actionList>
+                            <ruleList>
+                                <isFalse value="${report_aborted}"/>
+                            </ruleList>
+                        </showProgressDialog>
+                        <bncertAbortActions>
+                            <ruleList>
+                                <isTrue value="${report_aborted}"/>
+                            </ruleList>
+                        </bncertAbortActions>
+                    </actionList>
+                    <ruleList>
+                        <isFalse value="${dry_run}"/>
+                    </ruleList>
+                </actionGroup>
+            </postShowPageActionList>
+        </parameterGroup>
+        <!-- Custom final page parameter, which allows us to include info and links -->
+        <parameterGroup name="custom_final_page" title="Success" explanation="The ${project.fullName} succeeded in modifying your installation.">
+            <parameterList>
+                <!-- Errors that occurred during configuration and additional notes will be added here -->
+                <infoParameter name="report_text" explanation="The configuration report is shown below."/>
+                <linkParameter name="bitnami_support_link" description="${bitnami_support_url}" explanation="If you find any issues, please check Bitnami Support forums at:">
+                    <clickedActionList>
+                        <launchBrowser url="${bitnami_support_url}">
+                            <ruleList>
+                                <compareText text="${installer_ui}" logic="equals" value="gui"/>
+                            </ruleList>
+                        </launchBrowser>
+                    </clickedActionList>
+                    <ruleList>
+                        <compareText text="${installer_ui}" logic="equals" value="gui"/>
+                    </ruleList>
+                </linkParameter>
+                <!-- Parameters hidden to the user -->
+                <stringParameter name="report_failures_metadata" value="" ask="0" cliOptionShow="0"/>
+                <stringParameter name="report_nonreversible_metadata" value="" ask="0" cliOptionShow="0"/>
+                <booleanParameter name="report_aborted" value="0" ask="0" cliOptionShow="0"/>
+            </parameterList>
+            <preShowPageActionList>
+                <bncertPopulateReport/>
+                <setInstallerVariable name="back_page" value="custom_final_page"/>
+                <setInstallerVariable name="ui.button(next).text" value="${msg(Installer.Button.Finish)}"/>
+            </preShowPageActionList>
+            <postShowPageActionList>
+                <exit/>
+            </postShowPageActionList>
+        </parameterGroup>
+        <!-- The parameters below will not be shown to users -->
+        <!-- Constants -->
+        <stringParameter name="bitnami_docs_url" value="https://docs.bitnami.com" ask="0"/>
+        <stringParameter name="bitnami_support_url" value="https://github.com/bitnami/vms" ask="0"/>
+        <stringParameter name="bitnami_stacks_with_disabled_redirections" ask="0"/>
+        <!-- Metadata parameters (set during build-time or pre-install time) -->
+        <stringParameter name="current_run_id" ask="0"/>
+        <booleanParameter name="server_name_override" value="0" ask="0"/>
+        <!-- State parameters -->
+        <stringParameter name="restore_metadata" ask="0"/>
+        <booleanParameter name="requires_restoring" value="0" ask="0"/>
+        <stringParameter name="varnish_enabled" value="0" ask="0"/>
+        <stringParameter name="machine_public_ipaddr" ask="0"/>
+        <stringParameter name="changes_to_perform_next_page" ask="0"/>
+        <stringParameter name="changes_to_perform_metadata" ask="0"/>
+        <booleanParameter name="valid_installation_found" ask="0"/>
+        <booleanParameter name="valid_webserver" ask="0"/>
+        <booleanParameter name="valid_webserver_permissions" ask="0"/>
+        <booleanParameter name="valid_webserver_conf" ask="0"/>
+        <stringParameter name="webserver_conf_error" ask="0"/>
+        <booleanParameter name="enable_redirections" ask="0"/>
+        <choiceParameter name="installation_type" ask="0">
+            <optionList>
+                <!-- There are basic differences for things such as managing services, folder names, etc. -->
+                <option value="installer"/>
+                <option value="bash"/>
+            </optionList>
+        </choiceParameter>
+        <!-- Modifiers -->
+        <booleanParameter name="dry_run" description="Perform a dry run" default="0"/>
+        <booleanParameter name="use_staging" description="Use Let's Encrypt staging server" default="0"/>
+        <booleanParameter name="perform_public_ip_validation" description="Perform public IP address validation" default="1"/>
+        <booleanParameter name="perform_dns_validation" description="Perform DNS validation" default="1"/>
+        <stringParameter name="server_name" description="Server name"/>
+        <booleanParameter name="configure_server_name" cliOptionText="Configure web server name to match provided value of server name" default="1"/>
+        <booleanParameter name="manage_services" description="Stop and start services when needed" default="1"/>
+        <!-- Web server configuration -->
+        <stringParameter name="web_servers_supported_message" ask="0"/>
+        <stringParameter name="web_server_name" ask="0"/>
+        <stringParameter name="web_server_dirname" ask="0"/>
+        <stringParameter name="web_server_fullname" ask="0"/>
+        <stringParameter name="web_server_reload_command" ask="0"/>
+        <directoryParameter name="web_server_dir" ask="0"/>
+        <directoryParameter name="web_server_conf_dir" ask="0"/>
+    </parameterList>
+    <installationAbortedActionList>
+        <!-- Restore the configuration if a failure occurred -->
+        <bncertAbortActions>
+            <ruleList>
+                <isTrue value="${requires_restoring}"/>
+                <isFalse value="${dry_run}"/>
+            </ruleList>
+        </bncertAbortActions>
+    </installationAbortedActionList>
+</project>

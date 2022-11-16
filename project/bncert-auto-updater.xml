@@ -1,0 +1,54 @@
+<autoUpdateProject>
+    <fullName>bncert autoupdater</fullName>
+    <shortName>bncertupdater</shortName>
+    <version>1.0</version>
+    <vendor>Bitnami</vendor>
+    <enableSslSupport>1</enableSslSupport>
+    <autoUpdateInitializationActionList>
+        <iniFileGet file="${system_temp_directory}/autoupdater/update.ini" section="Update">
+            <key>update_download_location</key>
+            <variable>UpdateDownloadLocation</variable>
+        </iniFileGet>
+        <deleteFile>
+            <path>${UpdateDownloadLocation}/bncert*</path>
+        </deleteFile>
+    </autoUpdateInitializationActionList>
+    <postUpdateDownloadActionList>
+        <setInstallerVariableFromRegEx name="downloadedFileName" text="${downloadedFilePath}">
+            <pattern>^(.*)[\:\/]</pattern>
+        </setInstallerVariableFromRegEx>
+        <setInstallerVariableFromRegEx  name="downloadedFileName" text="${downloadedFileName}">
+            <pattern>.app.tgz|.app|.exe|.run</pattern>
+        </setInstallerVariableFromRegEx>
+        <iniFileGet file="${system_temp_directory}/autoupdater/update.ini" section="Update">
+            <key>bncert_tool_ui</key>
+            <variable>toolUI</variable>
+        </iniFileGet>
+        <iniFileGet file="${system_temp_directory}/autoupdater/update.ini" section="Update">
+            <key>bncert_tool_installdir</key>
+            <variable>toolInstalldir</variable>
+        </iniFileGet>
+        <dirName path="${downloadedFilePath}" variable="downloadFolder"/>
+        <createDirectory path="${toolInstalldir}/bncert"/>
+        <createSymLink linkName="${toolInstalldir}/bncert-tool" target="${toolInstalldir}/bncert/${downloadedFileName}.${platform_exec_suffix}" abortOnError="0" showMessageOnError="0"/>
+        <renameFile ruleEvaluationLogic="or" origin="${downloadedFilePath}" destination="${toolInstalldir}/bncert/">
+        </renameFile>
+        <if>
+            <conditionRuleList>
+                <compareText text="${toolUI}" logic="equals" value="gui"/>
+            </conditionRuleList>s
+            <actionList>
+            <runProgram workingDirectory="${system_temp_directory}" abortOnError="0" showMessageOnError="0">
+                <program>${toolInstalldir}/bncert/${downloadedFileName}.${platform_exec_suffix}</program>
+                <programArguments>&amp;</programArguments>
+                <ruleList>
+                    <platformTest type="linux"></platformTest>
+                </ruleList>
+            </runProgram>
+            </actionList>
+            <elseActionList>
+                <exit exitCode="0"/>
+            </elseActionList>
+        </if>
+    </postUpdateDownloadActionList>
+</autoUpdateProject>

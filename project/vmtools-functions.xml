@@ -1,0 +1,673 @@
+<component>
+    <name>vmtoolsfunctions</name>
+    <show>0</show>
+    <functionDefinitionList>
+        <ruleDefinition name="isValidInstall">
+            <parameterList>
+                <stringParameter name="path"/>
+            </parameterList>
+            <ruleEvaluationLogic>or</ruleEvaluationLogic>
+            <ruleList>
+                <isValidBitnamiInstall path="${path}"/>
+                <isValidBashInstall path="${path}"/>
+                <isValidXamppInstall path="${path}"/>
+            </ruleList>
+        </ruleDefinition>
+        <ruleDefinition name="isWwwDomainProvided">
+            <parameterList>
+                <stringParameter name="list"/>
+            </parameterList>
+            <actionList>
+                <setInstallerVariable name="is_provided" value="0"/>
+                <foreach variables="domain" values="${list}">
+                    <actionList>
+                        <setInstallerVariable name="is_provided" value="1">
+                            <ruleList>
+                                <regExMatch pattern="^www\..*$" logic="matches" text="${domain}"/>
+                            </ruleList>
+                        </setInstallerVariable>
+                    </actionList>
+                </foreach>
+            </actionList>
+            <ruleList>
+                <isTrue value="${is_provided}"/>
+            </ruleList>
+        </ruleDefinition>
+        <ruleDefinition name="isNonWwwDomainProvided">
+            <parameterList>
+                <stringParameter name="list"/>
+            </parameterList>
+            <actionList>
+                <setInstallerVariable name="is_provided" value="0"/>
+                <foreach variables="domain" values="${list}">
+                    <actionList>
+                        <setInstallerVariable name="is_provided" value="1">
+                            <ruleList>
+                                <regExMatch pattern="^www\..*$" logic="matches" text="${domain}" negate="1"/>
+                            </ruleList>
+                        </setInstallerVariable>
+                    </actionList>
+                </foreach>
+            </actionList>
+            <ruleList>
+                <isTrue value="${is_provided}"/>
+            </ruleList>
+        </ruleDefinition>
+        <actionDefinition name="listSort">
+            <parameterList>
+                <stringParameter name="list"/>
+                <stringParameter name="variable"/>
+            </parameterList>
+            <actionList>
+                <globalVariables names="${variable}"/>
+                <tclEval>
+                    <code>
+set list [installbuilder::substText {${list}}]
+::installbuilder::setVariable sorted_list [lsort $list]
+</code>
+                </tclEval>
+                <setInstallerVariable name="${variable}" value="${sorted_list}"/>
+            </actionList>
+        </actionDefinition>
+        <ruleDefinition name="listMatch">
+            <parameterList>
+                <stringParameter name="list1"/>
+                <stringParameter name="list2"/>
+            </parameterList>
+            <actionList>
+                <listSort list="${list1}" variable="sorted_list1"/>
+                <listSort list="${list2}" variable="sorted_list2"/>
+            </actionList>
+            <ruleList>
+                <compareText text="${sorted_list1}" logic="equals" value="${sorted_list2}"/>
+            </ruleList>
+        </ruleDefinition>
+        <actionDefinition name="populateInstalldirExplanation">
+            <actionList>
+                <foreach variables="platform message">
+                    <values>
+                        linux   "The default installation directory for Linux installers is a directory inside /opt."
+                    </values>
+                    <actionList>
+                        <setInstallerVariable name="parameter(installdir).explanation" value="Please type a directory that contains a Bitnami installation. ${message}">
+                            <ruleList>
+                                <platformTest type="${platform}"/>
+                            </ruleList>
+                        </setInstallerVariable>
+                    </actionList>
+                </foreach>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="autodetectInstalldir">
+            <parameterList>
+                <stringParameter name="paths"/>
+                <stringParameter name="variable"/>
+                <booleanParameter name="supportXampp" default="1"/>
+            </parameterList>
+            <actionList>
+                <globalVariables names="${variable}"/>
+                <setInstallerVariable name="valid_installation_found" value="0"/>
+                <foreach values="${paths}" variables="candidatePath">
+                    <actionList>
+                        <actionGroup ruleEvaluationLogic="or">
+                            <ruleList>
+                                <isValidInstall path="${candidatePath}"/>
+                                <ruleGroup>
+                                    <ruleList>
+                                        <isTrue value="${supportXampp}"/>
+                                        <isValidXamppInstall path="${candidatePath}"/>
+                                    </ruleList>
+                                </ruleGroup>
+                            </ruleList>
+                            <actionList>
+                                <setInstallerVariable name="installdir" value="${candidatePath}"/>
+                                <!-- macOS XAMPP contains the installdir inside a "xamppfiles" directory -->
+                                <!-- This way we will allow the user to choose both "installdir" and "installdir/xamppfiles" -->
+                                <setInstallerVariable name="installdir" value="${candidatePath}/xamppfiles">
+                                    <ruleList>
+                                        <isTrue value="${supportXampp}"/>
+                                        <isValidXamppInstall path="${candidatePath}/xamppfiles"/>
+                                    </ruleList>
+                                </setInstallerVariable>
+                                <!-- Determine the installation type (default to installer, the less restrictive one) -->
+                                <setInstallerVariable name="installation_type" value="installer"/>
+                                <setInstallerVariable name="installation_type" value="bash">
+                                    <ruleList>
+                                        <isValidBashInstall path="${installdir}"/>
+                                    </ruleList>
+                                </setInstallerVariable>
+                                <setInstallerVariable name="valid_installation_found" value="1"/>
+                                <break/>
+                            </actionList>
+                        </actionGroup>
+                    </actionList>
+                </foreach>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="runUpdater">
+            <parameterList>
+                <directoryParameter name="targetDir"/>
+            </parameterList>
+            <actionList>
+                <globalVariables names="${targetDir}"/>
+                <setInstallerVariable name="autoupdater_path" value="${system_temp_directory}/autoupdater"/>
+                <if>
+                    <conditionRuleEvaluationLogic>or</conditionRuleEvaluationLogic>
+                    <conditionRuleList>
+                        <fileTest path="${autoupdater_path}" condition="writable"/>
+                        <ruleGroup>
+                            <ruleList>
+                                <fileTest condition="not_exists" path="${autoupdater_path}"/>
+                                <fileTest path="${system_temp_directory}" condition="writable"/>
+                            </ruleList>
+                        </ruleGroup>
+                    </conditionRuleList>
+                    <actionList>
+                        <deleteFile path="${autoupdater_path}"/>
+                        <unpackDirectory component="autoupdater" folder="autoupdater" destination="${system_temp_directory}" origin="autoupdater"/>
+                        <iniFileSet file="${autoupdater_path}/update.ini" section="Update">
+                            <key>${project.shortName}_tool_installdir</key>
+                            <value>${targetDir}</value>
+                        </iniFileSet>
+                        <iniFileSet file="${autoupdater_path}/update.ini" section="Update">
+                            <key>${project.shortName}_tool_ui</key>
+                            <value>${installer_ui}</value>
+                        </iniFileSet>
+                        <runProgram workingDirectory="${autoupdater_path}" abortOnError="0" showMessageOnError="0">
+                            <program>./autoupdate-${platform_name}.${platform_exec_suffix}</program>
+                            <programArguments>--mode unattended</programArguments>
+                        </runProgram>
+                        <actionGroup>
+                            <actionList>
+                                <if>
+                                    <conditionRuleList>
+                                        <compareText text="${installer_ui}" logic="equals" value="gui"/>
+                                    </conditionRuleList>
+                                    <actionList>
+                                        <showQuestion text="An updated version is available. Would you like to download and execute it?" variable="runUpdated"/>
+                                    </actionList>
+                                    <elseActionList>
+                                        <showQuestion text="An updated version is available. Would you like to download it? You would need to run it manually later." variable="runUpdated"/>
+                                    </elseActionList>
+                                </if>
+                                <actionGroup>
+                                    <actionList>
+                                        <runProgram workingDirectory="${autoupdater_path}" abortOnError="0" showMessageOnError="0">
+                                            <program>./autoupdate-${platform_name}.${platform_exec_suffix}</program>
+                                            <programArguments>--mode unattended --unattendedmodebehavior download &amp;</programArguments>
+                                        </runProgram>
+                                        <if>
+                                            <conditionRuleList>
+                                                <compareText text="${installer_ui}" logic="equals" value="gui"/>
+                                            </conditionRuleList>
+                                            <actionList>
+                                                <exit exitCode="0"/>
+                                            </actionList>
+                                            <elseActionList>
+                                                <setInstallerVariable name="fullCommand">
+                                                    <value>
+
+${targetDir}/${project.shortName}-tool ${installer_command_line_arguments}
+
+</value>
+                                                </setInstallerVariable>
+                                            </elseActionList>
+                                        </if>
+                                        <consoleWrite text="The tool will exit now. To run the updated version run the following command: ${fullCommand}"/>
+                                        <exit exitCode="0"/>
+                                    </actionList>
+                                    <ruleList>
+                                        <isTrue value="${runUpdated}"/>
+                                    </ruleList>
+                                </actionGroup>
+                            </actionList>
+                            <ruleList>
+                                <compareValues value1="${program_exit_code}" logic="equals" value2="0"/>
+                            </ruleList>
+                        </actionGroup>
+                    </actionList>
+                    <elseActionList>
+                        <showWarning text="Could not write to ${autoupdater_path}. Make sure you have proper access rights. Will not check for updates."/>
+                    </elseActionList>
+                </if>
+            </actionList>
+        </actionDefinition>
+        <!-- Based from code in the IB documentation -->
+        <actionDefinition name="getUniquePath">
+            <parameterList>
+                <stringParameter name="originalPath"/>
+                <stringParameter name="variable"/>
+            </parameterList>
+            <actionList>
+                <globalVariables names="${variable}"/>
+                <setInstallerVariable name="${variable}" value=""/>
+                <setInstallerVariable name="max_suffix" value="100"/>
+                <if>
+                    <conditionRuleList>
+                        <fileTest condition="not_exists" path="${originalPath}"/>
+                    </conditionRuleList>
+                    <actionList>
+                        <setInstallerVariable name="${variable}" value="${originalPath}"/>
+                    </actionList>
+                    <elseActionList>
+                        <setInstallerVariable name="suffix" value="0"/>
+                        <setInstallerVariable name="candidate" value="${originalPath}.${suffix}"/>
+                        <while>
+                            <conditionRuleList>
+                                <fileExists path="${candidate}"/>
+                                <!-- Avoid getting stuck in case something strange happens -->
+                                <compareValues value1="${suffix}" logic="less" value2="${max_suffix}"/>
+                            </conditionRuleList>
+                            <actionList>
+                                <mathExpression text="${suffix}+1" variable="suffix"/>
+                                <setInstallerVariable name="candidate" value="${originalPath}.${suffix}"/>
+                            </actionList>
+                        </while>
+                        <setInstallerVariable name="${variable}" value="${candidate}">
+                            <ruleList>
+                                <compareValues value1="${suffix}" logic="less_or_equal" value2="${max_suffix}"/>
+                            </ruleList>
+                        </setInstallerVariable>
+                    </elseActionList>
+                </if>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="diffFiles">
+            <parameterList>
+                <stringParameter name="file1"/>
+                <stringParameter name="file2"/>
+                <stringParameter name="variable"/>
+                <stringParameter name="args" default="-uw"/>
+            </parameterList>
+            <actionList>
+                <globalVariables names="${variable}"/>
+                <setInstallerVariable name="${variable}" value=""/>
+                <!-- Note that the command will throw an exit code if files differ -->
+                <setInstallerVariableFromScriptOutput exec="diff" execArgs="${args} ${file1} ${file2}" name="${variable}" abortOnError="0" showMessageOnError="0">
+                    <ruleList>
+                        <programTest name="diff" condition="is_in_path"/>
+                    </ruleList>
+                </setInstallerVariableFromScriptOutput>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="backupFile">
+            <parameterList>
+                <fileParameter name="file"/>
+            </parameterList>
+            <actionList>
+                <actionGroup>
+                    <actionList>
+                        <getUniquePath originalPath="${file}.back.${current_run_id}" variable="dest_file"/>
+                        <throwError text="Could not back up file at ${file}. Please check file ownership of the parent directories.">
+                            <ruleList>
+                                <stringTest text="${dest_file}" type="empty"/>
+                            </ruleList>
+                        </throwError>
+                        <!-- Copy the actual file, e.g. to avoid issues when revoking certificates -->
+                        <setInstallerVariable name="file_realpath" value="${file}"/>
+                        <getSymLinkTarget link="${file}" variable="file_realpath">
+                            <ruleList>
+                                <fileTest path="${file}" condition="is_symlink"/>
+                            </ruleList>
+                        </getSymLinkTarget>
+                        <copyFile abortOnError="0" origin="${file_realpath}" destination="${dest_file}">
+                            <ruleList>
+                                <isFalse value="${dry_run}"/>
+                            </ruleList>
+                        </copyFile>
+                        <setInstallerVariable name="restore_metadata" value="${restore_metadata} &quot;${file}&quot; &quot;${dest_file}&quot;"/>
+                    </actionList>
+                    <ruleList>
+                        <!-- Do not require the file to exist -->
+                        <fileTest path="${file}" condition="exists"/>
+                    </ruleList>
+                </actionGroup>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="restoreFile">
+            <parameterList>
+                <fileParameter name="file"/>
+            </parameterList>
+            <actionList>
+                <actionGroup>
+                    <actionList>
+                        <setInstallerVariable name="found" value="0"/>
+                        <!-- Find the name of the backup file that was created -->
+                        <foreach variables="originalFile backupFile" values="${restore_metadata}">
+                            <actionList>
+                                <actionGroup>
+                                    <actionList>
+                                        <setInstallerVariable name="found" value="1"/>
+                                        <logMessage text="Restoring configuration file ${originalFile} from ${backupFile}"/>
+                                        <!-- Diff files in case any configuration changes were applied -->
+                                        <actionGroup>
+                                            <actionList>
+                                                <diffFiles file1="${originalFile}" file2="${backupFile}" variable="diff"/>
+                                                <logMessage text="Differences were found between ${originalFile} and ${backupFile}!&#xA;${diff}">
+                                                    <ruleList>
+                                                        <stringTest text="${diff}" type="not_empty"/>
+                                                    </ruleList>
+                                                </logMessage>
+                                            </actionList>
+                                            <ruleList>
+                                                <!-- Don't diff private keys nor certificates -->
+                                                <regExMatch pattern="\.(crt|key)$" logic="matches" text="${originalFile}" negate="1"/>
+                                            </ruleList>
+                                        </actionGroup>
+                                        <copyFile origin="${backupFile}" destination="${originalFile}"/>
+                                        <break/>
+                                    </actionList>
+                                    <ruleList>
+                                        <compareText text="${file}" logic="equals" value="${originalFile}"/>
+                                        <fileTest path="${backupFile}" condition="exists"/>
+                                        <fileTest path="${backupFile}" condition="is_file"/>
+                                    </ruleList>
+                                </actionGroup>
+                            </actionList>
+                        </foreach>
+                        <throwError abortOnError="0" text="Could not find backup file for: ${file}">
+                            <ruleList>
+                                <isFalse value="${found}"/>
+                            </ruleList>
+                        </throwError>
+                    </actionList>
+                    <ruleList>
+                        <isFalse value="${dry_run}"/>
+                    </ruleList>
+                </actionGroup>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="runCron">
+            <parameterList>
+                <stringParameter name="cronArguments"/>
+                <stringParameter name="stdoutVariable"/>
+                <stringParameter name="stderrVariable"/>
+                <stringParameter name="exitCodeVariable"/>
+            </parameterList>
+            <actionList>
+                <globalVariables names="${stdoutVariable} ${stderrVariable} ${exitCodeVariable}"/>
+                <setInstallerVariable name="user" value=""/>
+                <setInstallerVariable name="user" value="-u bitnami">
+                    <ruleList>
+                        <userTest username="bitnami"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <runProgram program="crontab" programArguments="${user} ${cronArguments}" abortOnError="0" showMessageOnError="0"/>
+                <setInstallerVariable name="${stdoutVariable}" value="${program_stdout}">
+                    <ruleList>
+                        <stringTest text="${stdoutVariable}" type="not_empty"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <setInstallerVariable name="${stderrVariable}" value="${program_stderr}">
+                    <ruleList>
+                        <stringTest text="${stderrVariable}" type="not_empty"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <setInstallerVariable name="${exitCodeVariable}" value="${program_exit_code}">
+                    <ruleList>
+                        <stringTest text="${exitCodeVariable}" type="not_empty"/>
+                    </ruleList>
+                </setInstallerVariable>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="runOpenssl">
+            <parameterList>
+                <stringParameter name="args"/>
+                <stringParameter name="stdoutVariable"/>
+                <stringParameter name="stderrVariable"/>
+                <stringParameter name="exitCodeVariable"/>
+            </parameterList>
+            <actionList>
+                <globalVariables names="${stdoutVariable} ${stderrVariable} ${exitCodeVariable}"/>
+                <setInstallerVariable name="program" value="openssl"/>
+                <setInstallerVariable name="program" value="${installdir}/common/bin/${program}">
+                    <ruleList>
+                        <fileExists path="${installdir}/common/bin/${program}"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <runProgram program="${program}" programArguments="${args}"/>
+                <setInstallerVariable name="${stdoutVariable}" value="${program_stdout}">
+                    <ruleList>
+                        <stringTest text="${stdoutVariable}" type="not_empty"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <setInstallerVariable name="${stderrVariable}" value="${program_stderr}">
+                    <ruleList>
+                        <stringTest text="${stderrVariable}" type="not_empty"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <setInstallerVariable name="${exitCodeVariable}" value="${program_exit_code}">
+                    <ruleList>
+                        <stringTest text="${exitCodeVariable}" type="not_empty"/>
+                    </ruleList>
+                </setInstallerVariable>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="addCronEntry">
+            <parameterList>
+                <stringParameter name="id"/>
+                <stringParameter name="entry"/>
+                <stringParameter name="exitCodeVariable"/>
+            </parameterList>
+            <actionList>
+                <globalVariables names="${exitCodeVariable}"/>
+                <setInstallerVariable name="user" value=""/>
+                <setInstallerVariable name="user" value="-u bitnami">
+                    <ruleList>
+                        <userTest username="bitnami"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <runCron cronArguments="-l" stdoutVariable="cron_stdout" stderrVariable="cron_stderr" exitCodeVariable="${exitCodeVariable}"/>
+                <actionGroup>
+                    <actionList>
+                        <setInstallerVariable name="new_crontab" value="${cron_stdout}&#xA;${entry} # ${id}&#xA;"/>
+                        <createTimeStamp format="%Y%m%d%H%M%S" variable="timestamp"/>
+                        <setInstallerVariable name="tempFile" value="${system_temp_directory}/cron${timestamp}"/>
+                        <writeFile path="${tempFile}" text="${new_crontab}"/>
+                        <runProgram program="crontab" programArguments="${user} ${tempFile}" abortOnError="0"/>
+                        <setInstallerVariable name="${exitCodeVariable}" value="${program_exit_code}"/>
+                        <deleteFile path="${tempFile}"/>
+                    </actionList>
+                    <ruleEvaluationLogic>or</ruleEvaluationLogic>
+                    <ruleList>
+                        <compareText text="${${exitCodeVariable}}" logic="equals" value="0"/>
+                        <compareText text="${cron_stderr}" logic="contains" value="no crontab for"/>
+                    </ruleList>
+                </actionGroup>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="removeCronEntries">
+            <parameterList>
+                <stringParameter name="id"/>
+                <stringParameter name="exitCodeVariable"/>
+            </parameterList>
+            <actionList>
+                <globalVariables names="${exitCodeVariable}"/>
+                <setInstallerVariable name="user" value=""/>
+                <setInstallerVariable name="user" value="-u bitnami">
+                    <ruleList>
+                        <userTest username="bitnami"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <runCron cronArguments="-l" stdoutVariable="cron_stdout" stderrVariable="cron_stderr" exitCodeVariable="${exitCodeVariable}"/>
+                <actionGroup>
+                    <actionList>
+                        <createTimeStamp format="%Y%m%d%H%M%S" variable="timestamp"/>
+                        <setInstallerVariable name="tempFile" value="${system_temp_directory}/cron${timestamp}"/>
+                        <writeFile path="${tempFile}" text="${cron_stdout}"/>
+                        <substitute files="${tempFile}">
+                            <substitutionList>
+                                <substitution pattern="^.*# ${id}$" value=""/>
+                            </substitutionList>
+                        </substitute>
+                        <runProgram program="crontab" programArguments="${user} ${tempFile}" abortOnError="0"/>
+                        <setInstallerVariable name="${exitCodeVariable}" value="${program_exit_code}"/>
+                        <deleteFile path="${tempFile}"/>
+                    </actionList>
+                    <ruleEvaluationLogic>or</ruleEvaluationLogic>
+                    <ruleList>
+                        <compareText text="${${exitCodeVariable}}" logic="equals" value="0"/>
+                        <compareText text="${cron_stderr}" logic="contains" value="no crontab for"/>
+                    </ruleList>
+                </actionGroup>
+            </actionList>
+        </actionDefinition>
+        <ruleDefinition name="isServiceRunning">
+            <parameterList>
+                <stringParameter name="service"/>
+            </parameterList>
+            <actionList>
+                <setInstallerVariable name="is_service_running" value="0"/>
+                <setInstallerVariable name="programToRun" value="${installdir}/ctlscript.sh"/>
+                <setInstallerVariable name="programToRun" value="${installdir}/scripts/${service}/status.sh">
+                    <ruleList>
+                        <fileTest condition="not_exists" path="${installdir}/ctlscript.sh"/>
+                        <fileTest condition="exists" path="${installdir}/scripts/${service}/status.sh"/>
+                        <compareText text="${installation_type}" logic="equals" value="bash"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <setInstallerVariable name="programToRun" value="${installdir}/nami/bin/nami">
+                    <ruleList>
+                        <fileTest condition="not_exists" path="${installdir}/ctlscript.sh"/>
+                        <fileTest condition="not_exists" path="${installdir}/scripts/${service}/status.sh"/>
+                        <fileTest condition="exists" path="${installdir}/nami/bin/nami"/>
+                        <compareText text="${installation_type}" logic="equals" value="bash"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <runProgram program="${programToRun}" programArguments="status ${service}" abortOnError="0" showMessageOnError="0"/>
+                <setInstallerVariable name="is_service_running" value="1">
+                    <ruleEvaluationLogic>or</ruleEvaluationLogic>
+                    <ruleList>
+                        <compareText text="${program_stdout}" logic="contains" value="is running"/>
+                        <compareText text="${program_stdout}" logic="contains" value="already running"/>
+                    </ruleList>
+                </setInstallerVariable>
+            </actionList>
+            <ruleList>
+                <isTrue value="${is_service_running}"/>
+            </ruleList>
+        </ruleDefinition>
+        <ruleDefinition name="isVarnishEnabled">
+            <ruleList>
+                <ruleGroup>
+                    <ruleEvaluationLogic>or</ruleEvaluationLogic>
+                    <ruleList>
+                        <!-- IB-based VMs -->
+                        <fileExists path="${installdir}/varnish/scripts/ctl.sh"/>
+                        <!-- Blacksmith-based VMs -->
+                        <fileExists path="${installdir}/scripts/varnish/start.sh"/>
+                    </ruleList>
+                </ruleGroup>
+                <isServiceRunning service="varnish"/>
+            </ruleList>
+        </ruleDefinition>
+        <ruleDefinition name="validateDomainIpAddressResolution">
+            <parameterList>
+                <stringParameter name="domain"/>
+                <stringParameter name="ipAddress"/>
+            </parameterList>
+            <actionList>
+                <setInstallerVariable name="detected_ip_address" value=""/>
+                <runProgram program="getent" programArguments="hosts ${domain}" abortOnError="0" showMessageOnError="0"/>
+                <setInstallerVariableFromRegEx name="detected_ip_address" pattern="^([0-9.]+)\s.*$" substitution="\1" text="${program_stdout}">
+                    <ruleList>
+                        <regExMatch text="${program_stdout}" logic="matches" pattern="^([0-9.]+)\s.*$"/>
+                        <compareText text="${program_exit_code}" logic="equals" value="0"/>
+                    </ruleList>
+                </setInstallerVariableFromRegEx>
+            </actionList>
+            <ruleList>
+                <compareText text="${detected_ip_address}" logic="equals" value="${ipAddress}"/>
+            </ruleList>
+        </ruleDefinition>
+        <actionDefinition name="getPublicIpAddress">
+            <parameterList>
+                <stringParameter name="variable"/>
+            </parameterList>
+            <actionList>
+                <!-- Get the public IP from myip.bitnami.com -->
+                <globalVariables names="${variable}"/>
+                <generateRandomValue length="10" variable="suffix"/>
+                <setInstallerVariable name="filename" value="${system_temp_directory}/myip${suffix}.tmp"/>
+                <httpGet url="http://myip.bitnami.com" filename="${filename}" abortOnError="0" showMessageOnError="0"/>
+                <readFile path="${filename}" name="${variable}"/>
+                <deleteFile path="${filename}"/>
+                <logMessage text="Detected public IP address: '${${variable}}'"/>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="grepText">
+            <parameterList>
+                <stringParameter name="text"/>
+                <stringParameter name="pattern"/>
+                <stringParameter name="variable"/>
+                <booleanParameter name="nocase" default="0"/>
+            </parameterList>
+            <actionList>
+                <globalVariables names="${variable}"/>
+                <tclEval>
+                    <code><![CDATA[
+set text [installbuilder::substText {${text}}]
+set pattern [installbuilder::substText {${pattern}}]
+set nocase [installbuilder::substText {${nocase}}]
+set variable [installbuilder::substText {${variable}}]
+set result ""
+if {![string is boolean $nocase]} {
+    set nocase 0
+}
+foreach line [split $text \n] {
+    if {($nocase && [string match -nocase *$pattern* $line]) || (!$nocase && [string match *$pattern* $line])} {
+        append result "$line\n"
+    }
+}
+::installbuilder::setVariable $variable $result
+]]></code>
+                </tclEval>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="tailText">
+            <parameterList>
+                <stringParameter name="text"/>
+                <stringParameter name="lines"/>
+                <stringParameter name="variable"/>
+            </parameterList>
+            <actionList>
+                <globalVariables names="${variable}"/>
+                <tclEval>
+                    <code><![CDATA[
+set text [installbuilder::substText {${text}}]
+set lines [installbuilder::substText {${lines}}]
+set variable [installbuilder::substText {${variable}}]
+::installbuilder::setVariable $variable [join [lrange [split $text "\n"] end-[expr $lines-1] end] "\n"]
+]]></code>
+                </tclEval>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="getDomainsFromCertificate">
+            <parameterList>
+                <stringParameter name="path"/>
+                <stringParameter name="domainsVariable"/>
+            </parameterList>
+            <actionList>
+                <globalVariables names="${domainsVariable}"/>
+                <setInstallerVariable name="${domainsVariable}" value=""/>
+                <runOpenssl args="x509 -noout -text -in ${path}" stdoutVariable="openssl_stdout" exitCodeVariable="openssl_exitcode" abortOnError="0"/>
+                <actionGroup>
+                    <actionList>
+                        <grepText text="${openssl_stdout}" pattern="DNS:" variable="openssl_stdout"/>
+                        <setInstallerVariableFromRegEx name="openssl_stdout" pattern="\n?\s+DNS:([^\s,]+),?" substitution="\1 " text="${openssl_stdout}"/>
+                        <stringModify logic="trim" text="${openssl_stdout}" variable="${domainsVariable}"/>
+                        <throwError text="Could not detect any domains associated to the certificate ${path}. Please revoke the certificate if it is invalid.">
+                            <ruleList>
+                                <stringTest text="${openssl_stdout}" type="empty"/>
+                            </ruleList>
+                        </throwError>
+                    </actionList>
+                    <ruleList>
+                        <compareText text="${openssl_exitcode}" logic="equals" value="0"/>
+                        <regExMatch text="${openssl_stdout}" logic="matches" pattern="\n?\s+DNS:([^\s,]+),?"/>
+                    </ruleList>
+                </actionGroup>
+            </actionList>
+        </actionDefinition>
+    </functionDefinitionList>
+</component>

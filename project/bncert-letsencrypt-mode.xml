@@ -1,0 +1,101 @@
+<componentGroup>
+    <name>bncertletsencryptmode</name>
+    <show>0</show>
+    <componentList>
+        <!-- Include Lego -->
+        <component name="lego" selected="1" canBeEdited="0" show="0">
+            <folderList>
+                <folder name="lego" destination="${lego_dir}">
+                    <distributionFileList>
+                        <distributionFile origin="lego"/>
+                    </distributionFileList>
+                    <ruleList>
+                        <!-- Never install, only extract when required -->
+                        <isTrue value="0"/>
+                    </ruleList>
+                </folder>
+            </folderList>
+        </component>
+    </componentList>
+    <preInstallationActionList>
+        <!-- Trim parameters to avoid whitespaces -->
+        <foreach values="email" variables="parameterToTrim">
+            <actionList>
+                <stringModify text="${${parameterToTrim}}" logic="trim" variable="${parameterToTrim}"/>
+            </actionList>
+            <ruleList>
+                <stringTest text="${${parameterToTrim}}" type="not_empty"/>
+            </ruleList>
+        </foreach>
+        <!-- Parameters that may have a different value on unattended mode -->
+        <setInstallerVariable name="letsencrypt_agree_to_tos" value="1">
+            <ruleList>
+                <compareText text="${mode}" logic="does_not_equal" value="unattended"/>
+            </ruleList>
+        </setInstallerVariable>
+    </preInstallationActionList>
+    <parameterList>
+        <parameterGroup name="letsencrypt_configuration_group" title="Create a free HTTPS certificate with Let's Encrypt" explanation="Please provide a valid e-mail address for which to associate your Let's Encrypt certificate." insertAfter="changes_to_perform_group">
+            <parameterList>
+                <labelParameter name="domains_label" description="Domain list: ${domains}"/>
+                <labelParameter name="server_name_label" description="Server name: ${server_name}"/>
+                <!-- Parameters that the user will be able to configure -->
+                <stringParameter name="email" description="E-mail address"/>
+                <!-- Link parameter are properly shown in GUI mode, but in text mode it looks better if we ask -->
+                <linkParameter name="letsencrypt_tos_link" description="${letsencrypt_tos_url}" explanation="If you click Next, it means you agree to the Let's Encrypt Subscriber Agreement, which can be found at:">
+                    <clickedActionList>
+                        <launchBrowser url="${letsencrypt_tos_url}"/>
+                    </clickedActionList>
+                    <ruleList>
+                        <isTrue value="${letsencrypt_agree_to_tos}"/>
+                        <compareText text="${installer_ui}" logic="equals" value="gui"/>
+                    </ruleList>
+                </linkParameter>
+                <booleanParameter name="letsencrypt_agree_to_tos" description="Do you agree to the Let's Encrypt Subscriber Agreement?" explanation="The Let's Encrypt Subscriber Agreement can be found at:&#xA;&#xA;${letsencrypt_tos_url}" cliOptionText="Agree to the Let's Encrypt Subscriber Agreement" cliOptionName="accept_tos" default="0">
+                    <ruleEvaluationLogic>or</ruleEvaluationLogic>
+                    <ruleList>
+                        <isFalse value="${letsencrypt_agree_to_tos}"/>
+                        <compareText text="${installer_ui}" logic="does_not_equal" value="gui"/>
+                    </ruleList>
+                </booleanParameter>
+            </parameterList>
+            <validationActionList>
+                <!-- The users must agree with the Let's Encrypt TOS -->
+                <throwError text="Please read and agree to the Let's Encrypt Subscriber Agreement">
+                    <ruleList>
+                        <isFalse value="${letsencrypt_agree_to_tos}"/>
+                    </ruleList>
+                </throwError>
+                <!-- Validate email -->
+                <throwError text="Please enter a valid email">
+                    <ruleEvaluationLogic>or</ruleEvaluationLogic>
+                    <ruleList>
+                        <stringTest type="empty" text="${email}"/>
+                        <regExMatch pattern="^[a-z0-9._\-]+@[a-z0-9._\-]+$" logic="does_not_match" text="${email}"/>
+                    </ruleList>
+                </throwError>
+            </validationActionList>
+            <ruleList>
+                <compareText text="${action}" logic="equals" value="create_letsencrypt_certificate"/>
+            </ruleList>
+        </parameterGroup>
+        <!-- The parameters below are not shown to users -->
+        <!-- Metadata parameters (set during build-time or pre-install time) -->
+        <stringParameter name="bundled_lego_version" ask="0"/>
+        <stringParameter name="letsencrypt_tos_url" ask="0"/>
+        <!-- State parameters -->
+        <booleanParameter name="use_existing_letsencrypt_certificate" default="0" ask="0"/>
+        <booleanParameter name="revoke_existing_letsencrypt_certificate" default="0" ask="0"/>
+        <stringParameter name="existing_letsencrypt_certificate_crt" default="0" ask="0"/>
+        <stringParameter name="existing_letsencrypt_certificate_key" default="0" ask="0"/>
+        <!-- Modifiers -->
+        <booleanParameter name="configure_cron" description="Create a cron entry for renewing certificates each month" default="1"/>
+        <!-- Internal -->
+        <booleanParameter name="disable_letsencrypt_certificate_generation" description="Don't create a Let's Encrypt certificate" default="0" ask="0"/>
+        <!-- Parameters that reference to Lego paths -->
+        <directoryParameter name="lego_dir" value="${installdir}/letsencrypt" ask="0"/>
+        <directoryParameter name="lego_app_dir" value="${installdir}/apps/letsencrypt" ask="0"/>
+        <fileParameter name="lego_binary" value="${lego_dir}/lego" ask="0"/>
+        <directoryParameter name="certificates_dir" value="${lego_dir}/certificates" ask="0"/>
+    </parameterList>
+</componentGroup>

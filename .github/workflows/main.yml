@@ -1,0 +1,99 @@
+name: Release
+on:
+  push:
+    branches:
+      - main
+  release:
+    types: [published]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    name: Build
+    env:
+      INSTALLBUILDER: installbuilder
+      INSTALLBUILDER_LICENSE: ${{ secrets.INSTALLBUILDER_LICENSE }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Get latest VMware InstallBuilder version
+        id: get-installbuilder-version
+        run: printf "INSTALLBUILDER_VERSION=%s\n" $(curl -sSL https://installbuilder.com/download-installbuilder-for-qt-step-2.html | grep -oE 'installbuilder-qt-enterprise-([^-]+)-linux-x64-installer.run' | sed -E 's/installbuilder-qt-enterprise-([^-]+)-linux-x64-installer.run/\1/') >> $GITHUB_OUTPUT
+      - name: Download and install VMware InstallBuilder
+        run: |
+          set -e
+          curl -sSL https://installbuilder.com/installbuilder-qt-enterprise-${{ steps.get-installbuilder-version.outputs.INSTALLBUILDER_VERSION }}-linux-x64-installer.run -o installbuilder.run
+          chmod a+x installbuilder.run
+          ./installbuilder.run --prefix "$INSTALLBUILDER" --mode unattended
+          echo "$INSTALLBUILDER_LICENSE" > "${INSTALLBUILDER}/license.xml"
+      - name: Build project
+        run: ./scripts/build.sh
+      - name: Copy release files
+        run: cp output-*/bncert-*.run output-amd64/bncert-update.xml .
+      - uses: actions/upload-artifact@v3
+        with:
+          name: release
+          path: |
+            bncert-update.xml
+            bncert-*.run
+  release:
+    needs: ['build']
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-20.04
+    name: Release
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/download-artifact@v3
+        with:
+          path: ./artifacts
+      - name: Set tag name
+        id: get-tag-name
+        run: printf "GITHUB_TAG=%s\n" ${GITHUB_REF#refs/*/} >> $GITHUB_OUTPUT
+      - name: Check tool version is the same as tag
+        run: |
+          set -e
+          tag_name="${{ steps.get-tag-name.outputs.GITHUB_TAG }}"
+          version_name="$(cat VERSION)"
+          if [ "$tag_name" != "v${version_name}" ]; then
+            echo "The tool version v${version_name} does not match the tag: ${tag_name}"
+            exit 1
+          fi
+      - name: Release
+        run: |
+          set -e
+          assets=( ./artifacts/release/* )
+          tag_name="${{ steps.get-tag-name.outputs.GITHUB_TAG }}"
+          if gh release view "$tag_name" >/dev/null 2>/dev/null; then
+            echo "Release $tag_name already exists. Updating"
+            gh release upload "$tag_name" "${assets[@]}"
+          else
+            echo "Creating new release $tag_name"
+            gh release create -t "$tag_name" "$tag_name" --generate-notes "${assets[@]}"
+          fi
+  upload:
+    needs: ['build', 'release']
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-20.04
+    name: Upload
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.S3_USER }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_PASSWORD }}
+      AWS_DEFAULT_REGION: us-east-1
+      S3_URL: ${{ secrets.S3_URL }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/download-artifact@v3
+        with:
+          path: ./artifacts
+      - name: Upload to S3 bucket
+        run: |
+          set -e
+          version_name="$(cat VERSION)"
+          cd ./artifacts/release
+          for arch in arm64 x64; do
+            aws s3 cp --acl public-read bncert-$version_name-linux-$arch.run $S3_URL/$version_name/
+            aws s3 cp --acl public-read bncert-$version_name-linux-$arch.run $S3_URL/latest/bncert-linux-$arch.run
+          done
+          aws s3 cp --acl public-read bncert-update.xml $S3_URL/latest/

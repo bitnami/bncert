@@ -1,0 +1,575 @@
+<component>
+    <name>bncertwebserverapachefunctions</name>
+    <show>0</show>
+    <functionDefinitionList>
+        <!-- Actions only used within this file -->
+        <ruleDefinition name="apacheConfContains">
+            <parameterList>
+                <fileParameter name="file"/>
+                <stringParameter name="block"/>
+            </parameterList>
+            <ruleList>
+                <fileContentTest path="${file}" logic="contains" text="# BEGIN: ${block}"/>
+                <fileContentTest path="${file}" logic="contains" text="# END: ${block}"/>
+            </ruleList>
+        </ruleDefinition>
+        <actionDefinition name="apacheRemoveConf">
+            <parameterList>
+                <fileParameter name="file"/>
+                <stringParameter name="block"/>
+            </parameterList>
+            <actionList>
+                <generateRandomValue length="10" variable="tmpFileId"/>
+                <setInstallerVariable name="tmpFile" value="${file}.${tmpFileId}.tmp"/>
+                <tclEval>
+                    <code><![CDATA[
+set file [installbuilder::substText {${file}}]
+set tmpFile [installbuilder::substText {${tmpFile}}]
+set block [installbuilder::substText {${block}}]
+# Open configuration file for read, and temporary file for write
+set orig [open $file r]
+catch {fconfigure $orig -encoding binary}
+fconfigure $orig -buffering line
+set dest [open $tmpFile w+]
+catch {fconfigure $dest -encoding binary}
+# Modifiers to know where we are in the configuration file
+set inBlock 0
+# Read line by line, just like awk does
+while {[gets $orig data] >= 0} {
+    if {$data == "  # BEGIN: $block"} {
+        set inBlock 1
+    }
+    if {$data == "  # END: $block"} {
+        set inBlock 0
+    } elseif {!$inBlock} {
+        puts $dest $data
+    }
+}
+close $orig
+close $dest
+file rename -force $tmpFile $file
+]]></code>
+                </tclEval>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="apacheAddConfToVhost">
+            <parameterList>
+                <fileParameter name="file"/>
+                <stringParameter name="requiredConf"/>
+                <stringParameter name="httpConf"/>
+                <stringParameter name="httpsConf"/>
+                <stringParameter name="block"/>
+                <choiceParameter name="position" default="beginning">
+                    <optionList>
+                        <option value="beginning"/>
+                        <option value="end"/>
+                    </optionList>
+                </choiceParameter>
+            </parameterList>
+            <actionList>
+                <generateRandomValue length="10" variable="tmpFileId"/>
+                <setInstallerVariable name="tmpFile" value="${file}.${tmpFileId}.tmp"/>
+                <tclEval>
+                    <code><![CDATA[
+set file [installbuilder::substText {${file}}]
+set tmpFile [installbuilder::substText {${tmpFile}}]
+set required_conf [installbuilder::substText {${requiredConf}}]
+set http_conf [installbuilder::substText {${httpConf}}]
+set https_conf [installbuilder::substText {${httpsConf}}]
+set block [installbuilder::substText {${block}}]
+set position [installbuilder::substText {${position}}]
+# Open configuration file for read, and temporary file for write
+set orig [open $file r]
+catch {fconfigure $orig -encoding binary}
+fconfigure $orig -buffering line
+set dest [open $tmpFile w+]
+catch {fconfigure $dest -encoding binary}
+# Modifiers to know where we are in the configuration file
+set addConfToVhost 0
+set blockLevel 0
+set confAddedToVhost 0
+set isInsideConfBlock 0
+set isInsideVhost 0
+set isSslVhost 0
+# Global modifiers
+set isStatusVhost 0
+set vhostHasRequiredConf 0
+if {$required_conf == ""} {
+    set vhostHasRequiredConf 1
+}
+# Read line by line, just like awk does
+while {[gets $orig data] >= 0} {
+    # If we find ExtendedStatus, assume all virtual hosts from this point on are for status pages
+    if {[regexp {^\s*ExtendedStatus\s+[oO][nN]} $data]} {
+        set isStatusVhost 1
+    }
+    # If we find a VirtualHost closing tag, we're getting outside of it (and this is its last line)
+    set isLastLine 0
+    if {[regexp {^\s*<\/VirtualHost} $data]} {
+        set isLastLine 1
+    }
+    # If we're entering a VirtualHost, reset non-global modifiers
+    if {[regexp {^<VirtualHost\s+} $data]} {
+        set isInsideVhost 1
+        set addConfToVhost 0
+        set blockLevel 0
+        set confAddedToVhost 0
+        set isInsideConfBlock 0
+        set isSslVhost 0
+    } elseif {$isInsideVhost} {
+        # The configuration is added before the current line, with the 'elseif' we avoid it getting added before <VirtualHost>
+        # Determine if the configuration can be added
+        if {[regexp "^\s*# BEGIN: $block" $data]} {
+            # Avoid a block being added more than once
+            set confAddedToVhost 1
+        }
+        if {[regexp {httpd-cms.conf"$} $data]} {
+            # Avoid block being added to edx virtual host
+            set confAddedToVhost 1
+        }
+        if {$blockLevel == 0 && $isInsideVhost && !$isStatusVhost && !$confAddedToVhost} {
+            if {!$vhostHasRequiredConf && [regexp "^\\s*$required_conf" $data]} {
+                set vhostHasRequiredConf 1
+            } elseif {[regexp {^\s*SSL} $data]} {
+                set isSslVhost 1
+            } elseif {[regexp {^\s*# BEGIN:} $data]} {
+                set isInsideConfBlock 1
+            } elseif {[regexp {^\s*(?!(Document|Server))([<a-zA-Z])} $data] && !$isInsideConfBlock} {
+                # Asume we're inside an HTTP vhost if we reached a directive that is not DocumentRoot/ServerName/ServerAlias
+                # Also, if a "# BEGIN:" comment is detected, it means this line is a good place to add the configuration
+                if {(!$isSslVhost && $http_conf != "") || ($isSslVhost && $https_conf != "")} {
+                    set addConfToVhost 1
+                } else {
+                    # Don't add configuration if there is nothign to add
+                    set confAddedToVhost 1
+                }
+            } elseif {[regexp {^\s*# END:} $data]} {
+                set isInsideConfBlock 0
+            }
+        }
+        # Ensure configuration gets added if still not clear whether this is an SSL VirtualHost or not
+        if {$isLastLine && !$confAddedToVhost && !$isStatusVhost} {
+            set addConfToVhost 1
+        }
+        # Add the configuration
+        if {$addConfToVhost} {
+            if {$position == "beginning" || $isLastLine} {
+                set addConfToVhost 0
+                set confAddedToVhost 1
+                puts $dest "  # BEGIN: $block"
+                if {!$vhostHasRequiredConf} {
+                    puts $dest "  $required_conf"
+                }
+                if {$isSslVhost} {
+                    puts $dest "$https_conf"
+                } else {
+                    puts $dest "$http_conf"
+                }
+                puts $dest "  # END: $block"
+            }
+        }
+        # If we find a closing tag for VirtualHost, we're getting outside of one
+        if {$isLastLine} {
+            set isInsideVhost 0
+            set confAddedToVhost 0
+            set vhostHasRequiredConf 0
+        }
+        # From this line on, check if we're getting inside another tag or not (i.e. Location, Directory...)
+        if {[regexp {^\s*<(?!VirtualHost)[a-zA-Z]} $data]} {
+            incr blockLevel
+        } elseif {[regexp {^\s*<\/(?!VirtualHost)[a-zA-Z]} $data]} {
+            incr blockLevel -1
+        }
+    }
+    puts $dest $data
+}
+close $orig
+close $dest
+file rename -force $tmpFile $file
+]]></code>
+                </tclEval>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="apacheGetAllVhostFiles">
+            <parameterList>
+                <stringParameter name="variable"/>
+            </parameterList>
+            <actionList>
+                <globalVariables names="${variable}"/>
+                <setInstallerVariable name="all_files" value="${web_server_conf_dir}/bitnami/bitnami.conf"/>
+                <setInstallerVariable name="all_files" value="${all_files} ${web_server_conf_dir}/bitnami/bitnami-ssl.conf">
+                    <ruleList>
+                        <fileExists path="${web_server_conf_dir}/bitnami/bitnami-ssl.conf"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <!-- Find virtual host files in vhosts directory, for Nami assets -->
+                <actionGroup>
+                    <actionList>
+                        <baseGlob pattern="${web_server_conf_dir}/vhosts/*-vhost.conf" variable="candidate_files"/>
+                        <foreach variables="vhost_file" values="${candidate_files}">
+                            <actionList>
+                                <continue>
+                                    <ruleEvaluationLogic>or</ruleEvaluationLogic>
+                                    <ruleList>
+                                        <!-- Ignore status vhost -->
+                                        <compareText text="${vhost_file}" logic="equals" value="${web_server_conf_dir}/vhosts/00_status-vhost.conf"/>
+                                    </ruleList>
+                                </continue>
+                                <setInstallerVariable name="all_files" value="${all_files} ${vhost_file}"/>
+                            </actionList>
+                        </foreach>
+                    </actionList>
+                    <ruleList>
+                        <compareText text="${installation_type}" logic="equals" value="bash"/>
+                    </ruleList>
+                </actionGroup>
+                <setInstallerVariable name="${variable}" value="${all_files}"/>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="apacheAddConfToAllVhosts">
+            <parameterList>
+                <stringParameter name="requiredConf"/>
+                <stringParameter name="httpConf"/>
+                <stringParameter name="httpsConf"/>
+                <stringParameter name="block"/>
+                <choiceParameter name="position" default="beginning">
+                    <optionList>
+                        <option value="beginning"/>
+                        <option value="end"/>
+                    </optionList>
+                </choiceParameter>
+            </parameterList>
+            <actionList>
+                <apacheGetAllVhostFiles variable="vhost_files"/>
+                <foreach variables="vhost_file" values="${vhost_files}">
+                    <actionList>
+                        <apacheAddConfToVhost file="${vhost_file}" requiredConf="${requiredConf}" httpConf="${httpConf}" httpsConf="${httpsConf}" block="${block}" position="${position}">
+                            <ruleList>
+                                <apacheConfContains file="${vhost_file}" block="${block}" negate="1"/>
+                            </ruleList>
+                        </apacheAddConfToVhost>
+                    </actionList>
+                </foreach>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="apacheRemoveConfFromAllVhosts">
+            <parameterList>
+                <stringParameter name="block"/>
+            </parameterList>
+            <actionList>
+                <apacheGetAllVhostFiles variable="vhost_files"/>
+                <foreach variables="vhost_file" values="${vhost_files}">
+                    <actionList>
+                        <apacheRemoveConf file="${vhost_file}" block="${block}"/>
+                    </actionList>
+                </foreach>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="apacheNamiRegisterApp">
+            <parameterList>
+                <stringParameter name="name"/>
+            </parameterList>
+            <actionList>
+                <setInstallerVariable name="block" value="Configuration for ${name}"/>
+                <setInstallerVariable name="include_conf" value="  Include &quot;${installdir}/apps/${name}/conf/httpd-prefix.conf&quot;"/>
+                <apacheRemoveConfFromAllVhosts block="${block}"/>
+                <apacheAddConfToAllVhosts block="${block}" httpConf="${include_conf}" httpsConf="${include_conf}"/>
+            </actionList>
+        </actionDefinition>
+        <!-- Rules -->
+        <ruleDefinition name="apacheIsHttpsRedirectionEnabled">
+            <actionList>
+                <readFile path="${web_server_conf_dir}/bitnami/bitnami.conf" name="confFile" abortOnError="0"/>
+            </actionList>
+            <ruleList>
+                <regExMatch text="${confFile}" logic="matches" pattern="\n\s*RewriteRule\s+\^\/\(\.\*\)\s+https:.*"/>
+            </ruleList>
+        </ruleDefinition>
+        <ruleDefinition name="apacheIsCustomHttpsRedirectionEnabled">
+            <ruleList>
+                <apacheIsHttpsRedirectionEnabled/>
+                <apacheConfContains file="${web_server_conf_dir}/bitnami/bitnami.conf" block="${parameter(additional_configuration).parameter(enable_https_redirection).description}" negate="1"/>
+            </ruleList>
+        </ruleDefinition>
+        <ruleDefinition name="apacheIsNonWwwToWwwRedirectionEnabled">
+            <actionList>
+                <readFile path="${web_server_conf_dir}/bitnami/bitnami.conf" name="confFile" abortOnError="0"/>
+            </actionList>
+            <ruleList>
+                <regExMatch text="${confFile}" logic="matches" pattern="\n\s*RewriteCond\s+\%\{HTTP_HOST\}\s+\!\^www\\\..*"/>
+            </ruleList>
+        </ruleDefinition>
+        <ruleDefinition name="apacheIsCustomNonWwwToWwwRedirectionEnabled">
+            <ruleList>
+                <apacheIsNonWwwToWwwRedirectionEnabled/>
+                <apacheConfContains file="${web_server_conf_dir}/bitnami/bitnami.conf" block="${parameter(additional_configuration).parameter(enable_nonwww_to_www_redirection).description}" negate="1"/>
+            </ruleList>
+        </ruleDefinition>
+        <ruleDefinition name="apacheIsWwwToNonWwwRedirectionEnabled">
+            <actionList>
+                <readFile path="${web_server_conf_dir}/bitnami/bitnami.conf" name="confFile" abortOnError="0"/>
+            </actionList>
+            <ruleList>
+                <regExMatch text="${confFile}" logic="matches" pattern="\n\s*RewriteCond\s+\%\{HTTP_HOST\}\s+\^www\\\..*"/>
+            </ruleList>
+        </ruleDefinition>
+        <ruleDefinition name="apacheIsCustomWwwToNonWwwRedirectionEnabled">
+            <ruleList>
+                <apacheIsWwwToNonWwwRedirectionEnabled/>
+                <apacheConfContains file="${web_server_conf_dir}/bitnami/bitnami.conf" block="${parameter(additional_configuration).parameter(enable_www_to_nonwww_redirection).description}" negate="1"/>
+            </ruleList>
+        </ruleDefinition>
+        <ruleDefinition name="apacheIsWebServerConfigurationValid">
+            <actionList>
+                <runProgram program="${web_server_dir}/bin/apachectl" programArguments="configtest" abortOnError="0" showMessageOnError="0"/>
+                <setInstallerVariable name="webserver_conf_error" value="${program_stdout}&#xA;${program_stderr}"/>
+            </actionList>
+            <ruleList>
+                <compareText text="${program_exit_code}" logic="equals" value="0"/>
+            </ruleList>
+        </ruleDefinition>
+        <!-- Populate metadata -->
+        <actionDefinition name="apachePopulateWebServerParameters">
+            <actionList>
+                <setInstallerVariable name="web_server_name" value="apache"/>
+                <setInstallerVariable name="web_server_fullname" value="Apache"/>
+                <setInstallerVariable name="web_server_dirname" value="apache2"/>
+                <setInstallerVariable name="web_server_dirname" value="apache">
+                    <ruleList>
+                        <compareText text="${installation_type}" logic="equals" value="bash"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <setInstallerVariable name="web_server_reload_command" value="${web_server_dir}/bin/httpd -f ${web_server_conf_dir}/httpd.conf -k graceful"/>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="apacheConfigurationFiles">
+            <parameterList>
+                <stringParameter name="variable"/>
+            </parameterList>
+            <actionList>
+                <globalVariables names="${variable}"/>
+                <setInstallerVariable name="conf_files" value="${web_server_conf_dir}/httpd.conf"/>
+                <setInstallerVariable name="conf_files" value="${conf_files} ${web_server_conf_dir}/bitnami/bitnami-apps-prefix.conf">
+                    <ruleList>
+                        <fileExists path="${web_server_conf_dir}/bitnami/bitnami-apps-prefix.conf"/>
+                    </ruleList>
+                </setInstallerVariable>
+                <apacheGetAllVhostFiles variable="vhost_files"/>
+                <setInstallerVariable name="${variable}" value="${conf_files} ${vhost_files}"/>
+            </actionList>
+        </actionDefinition>
+        <!-- Actions -->
+        <actionDefinition name="apacheConfigureCertificates">
+            <parameterList>
+                <stringParameter name="keyFile"/>
+                <stringParameter name="crtFile"/>
+            </parameterList>
+            <actionList>
+                <foreach variables="type" values="key crt">
+                    <actionList>
+                        <setInstallerVariableFromRegEx name="basename" pattern=".*\/([^/]+)" substitution="\1" text="${${type}File}"/>
+                        <setInstallerVariable name="dest_${type}_file" value="${web_server_conf_dir}/${basename}"/>
+                        <!-- We already backed it up, so we can safely replace it -->
+                        <deleteFile path="${dest_${type}_file}"/>
+                        <createSymLink target="${${type}File}" linkName="${dest_${type}_file}"/>
+                    </actionList>
+                </foreach>
+                <apacheGetAllVhostFiles variable="vhost_files"/>
+                <foreach variables="vhost_file" values="${vhost_files}">
+                    <actionList>
+                        <substitute type="regexp" files="${vhost_file}">
+                            <substitutionList>
+                                <substitution pattern="SSLCertificateKeyFile\s+.*" value="SSLCertificateKeyFile &quot;${dest_key_file}&quot;"/>
+                                <substitution pattern="SSLCertificateFile\s+.*" value="SSLCertificateFile &quot;${dest_crt_file}&quot;"/>
+                            </substitutionList>
+                        </substitute>
+                    </actionList>
+                </foreach>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="apacheConfigureServerName">
+            <parameterList>
+                <stringParameter name="serverName"/>
+            </parameterList>
+            <actionList>
+                <substitute type="regexp" files="${web_server_conf_dir}/httpd.conf" enableBackreferences="1">
+                    <substitutionList>
+                        <substitution pattern="^\s*ServerName\s+.+?(:[0-9]+)?\s*$" value="ServerName ${serverName}\1"/>
+                    </substitutionList>
+                </substitute>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="apacheEnableConfigurationPatches">
+            <actionList>
+                <!-- This is for applications that use ProxyPass without Location, in which case the first match is used (e.g. Odoo) -->
+                <setInstallerVariable name="conf_to_add">
+                    <value><![CDATA[  <IfModule mod_proxy.c>
+    ProxyPass /.well-known !
+  </IfModule>]]></value>
+                </setInstallerVariable>
+                <apacheAddConfToAllVhosts block="Support domain renewal when using mod_proxy without Location">
+                    <httpConf>${conf_to_add}</httpConf>
+                    <httpsConf>${conf_to_add}</httpsConf>
+                </apacheAddConfToAllVhosts>
+                <!-- This is for applications that use ProxyPass within a Location, as the last Location will be detected first (e.g. Tomcat) -->
+                <setInstallerVariable name="conf_to_add">
+                    <value><![CDATA[  <Location /.well-known>
+    <IfModule mod_proxy.c>
+      ProxyPass !
+    </IfModule>
+  </Location>]]></value>
+                </setInstallerVariable>
+                <apacheAddConfToAllVhosts block="Support domain renewal when using mod_proxy within Location" position="end">
+                    <httpConf>${conf_to_add}</httpConf>
+                    <httpsConf>${conf_to_add}</httpsConf>
+                </apacheAddConfToAllVhosts>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="apacheDisableConfigurationPatches">
+            <actionList>
+                <apacheRemoveConfFromAllVhosts block="Support domain renewal when using mod_proxy without Location"/>
+                <apacheRemoveConfFromAllVhosts block="Support domain renewal when using mod_proxy within Location"/>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="apacheEnableHttpsRedirection">
+            <actionList>
+                <setInstallerVariable name="block" value="${parameter(additional_configuration).parameter(enable_https_redirection).description}"/>
+                <if>
+                    <conditionRuleList>
+                        <apacheIsHttpsRedirectionEnabled negate="1"/>
+                    </conditionRuleList>
+                    <actionList>
+                        <logMessage text="Enabling HTTPS redirection"/>
+                        <apacheAddConfToAllVhosts block="${block}">
+                            <requiredConf>RewriteEngine On</requiredConf>
+                            <httpConf>  RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP_HOST} !^localhost
+  RewriteCond %{HTTP_HOST} !^[0-9]+.[0-9]+.[0-9]+.[0-9]+(:[0-9]+)?$
+  RewriteCond %{REQUEST_URI} !^/\.well-known
+  RewriteRule ^/(.*) https://%{SERVER_NAME}/$1 [R,L]</httpConf>
+                        </apacheAddConfToAllVhosts>
+                    </actionList>
+                    <elseActionList>
+                        <logMessage text="Not enabling HTTPS redirection, it was already enabled"/>
+                    </elseActionList>
+                </if>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="apacheDisableHttpsRedirection">
+            <actionList>
+                <apacheRemoveConfFromAllVhosts block="${parameter(additional_configuration).parameter(enable_https_redirection).description}"/>
+                <setInstallerVariable name="report_failures_metadata" value="${report_failures_metadata} &quot;Disable HTTPS redirection: Removing custom redirections not supported&quot;">
+                    <ruleList>
+                        <apacheIsHttpsRedirectionEnabled/>
+                    </ruleList>
+                </setInstallerVariable>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="apacheEnableNonWwwToWwwRedirection">
+            <actionList>
+                <setInstallerVariable name="block" value="${parameter(additional_configuration).parameter(enable_nonwww_to_www_redirection).description}"/>
+                <if>
+                    <conditionRuleList>
+                        <apacheIsWwwToNonWwwRedirectionEnabled negate="1"/>
+                        <apacheIsNonWwwToWwwRedirectionEnabled negate="1"/>
+                    </conditionRuleList>
+                    <actionList>
+                        <logMessage text="Enabling non-www to www redirection"/>
+                        <apacheAddConfToAllVhosts block="${block}">
+                            <requiredConf>RewriteEngine On</requiredConf>
+                            <httpConf>  RewriteCond %{HTTP_HOST} !^www\. [NC]
+  RewriteCond %{HTTP_HOST} !^localhost
+  RewriteCond %{HTTP_HOST} !^[0-9]+.[0-9]+.[0-9]+.[0-9]+(:[0-9]+)?$
+  RewriteCond %{REQUEST_URI} !^/\.well-known
+  RewriteRule ^(.*)$ http://www.%{HTTP_HOST}%{REQUEST_URI} [R=permanent,L]</httpConf>
+                    <httpsConf>  RewriteCond %{HTTP_HOST} !^www\. [NC]
+  RewriteCond %{HTTP_HOST} !^localhost
+  RewriteCond %{HTTP_HOST} !^[0-9]+.[0-9]+.[0-9]+.[0-9]+(:[0-9]+)?$
+  RewriteCond %{REQUEST_URI} !^/\.well-known
+  RewriteRule ^(.*)$ https://www.%{HTTP_HOST}%{REQUEST_URI} [R=permanent,L]</httpsConf>
+                        </apacheAddConfToAllVhosts>
+                    </actionList>
+                    <elseActionList>
+                        <logMessage text="Not enabling non-www to www redirection, it was already enabled"/>
+                    </elseActionList>
+                </if>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="apacheDisableNonWwwToWwwRedirection">
+            <actionList>
+                <setInstallerVariable name="block" value="${parameter(additional_configuration).parameter(enable_nonwww_to_www_redirection).description}"/>
+                <apacheRemoveConfFromAllVhosts block="${block}"/>
+                <setInstallerVariable name="report_failures_metadata" value="${report_failures_metadata} &quot;Disable non-www to www redirection: Removing custom redirections not supported&quot;">
+                    <ruleList>
+                        <apacheIsNonWwwToWwwRedirectionEnabled/>
+                    </ruleList>
+                </setInstallerVariable>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="apacheEnableWwwToNonWwwRedirection">
+            <actionList>
+                <setInstallerVariable name="block" value="${parameter(additional_configuration).parameter(enable_www_to_nonwww_redirection).description}"/>
+                <if>
+                    <conditionRuleList>
+                        <apacheIsWwwToNonWwwRedirectionEnabled negate="1"/>
+                        <apacheIsNonWwwToWwwRedirectionEnabled negate="1"/>
+                    </conditionRuleList>
+                    <actionList>
+                        <logMessage text="Enabling www to non-www redirection"/>
+                        <apacheAddConfToAllVhosts block="${block}">
+                            <requiredConf>RewriteEngine On</requiredConf>
+                            <httpConf>  RewriteCond %{HTTP_HOST} ^www\.(.*)$ [NC]
+  RewriteCond %{HTTP_HOST} !^localhost
+  RewriteCond %{HTTP_HOST} !^[0-9]+.[0-9]+.[0-9]+.[0-9]+(:[0-9]+)?$
+  RewriteCond %{REQUEST_URI} !^/\.well-known
+  RewriteRule ^(.*)$ http://%1$1 [R=permanent,L]</httpConf>
+                            <httpsConf>  RewriteCond %{HTTP_HOST} ^www\.(.*)$ [NC]
+  RewriteCond %{HTTP_HOST} !^localhost
+  RewriteCond %{HTTP_HOST} !^[0-9]+.[0-9]+.[0-9]+.[0-9]+(:[0-9]+)?$
+  RewriteCond %{REQUEST_URI} !^/\.well-known
+  RewriteRule ^(.*)$ https://%1$1 [R=permanent,L]</httpsConf>
+                        </apacheAddConfToAllVhosts>
+                    </actionList>
+                    <elseActionList>
+                        <logMessage text="Not enabling www to non-www redirection, it was already enabled"/>
+                    </elseActionList>
+                </if>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="apacheDisableWwwToNonWwwRedirection">
+            <actionList>
+                <setInstallerVariable name="block" value="${parameter(additional_configuration).parameter(enable_www_to_nonwww_redirection).description}"/>
+                <apacheRemoveConfFromAllVhosts block="${block}"/>
+                <setInstallerVariable name="report_failures_metadata" value="${report_failures_metadata} &quot;Disable www to non-www redirection: Removing custom redirections not supported&quot;">
+                    <ruleList>
+                        <apacheIsWwwToNonWwwRedirectionEnabled/>
+                    </ruleList>
+                </setInstallerVariable>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="apacheConfigureApp">
+            <parameterList>
+                <directoryParameter name="appDirectory"/>
+                <directoryParameter name="appWebDirectory"/>
+            </parameterList>
+            <actionList>
+                <!-- We clean the directory, in order to avoid an issue where an inconsistent run is not configuring the app because it already exists -->
+                <deleteFile path="${appDirectory}"/>
+                <fileName path="${appDirectory}" variable="appDirname"/>
+                <fileName path="${appWebDirectory}" variable="htmlDirname"/>
+                <apacheConfigurationForApp appName="${htmlDirname}" appDirectory="${appDirectory}" appWebDirectory="${appWebDirectory}" apacheAllowOverride="None" disableBitNamiBanner="1"/>
+                <if>
+                    <conditionRuleList>
+                        <compareText text="${installation_type}" logic="equals" value="bash"/>
+                    </conditionRuleList>
+                    <actionList>
+                        <apacheNamiRegisterApp name="${appDirname}"/>
+                    </actionList>
+                    <elseActionList>
+                        <apacheRegisterApp applicationId="${appDirname}"/>
+                    </elseActionList>
+                </if>
+            </actionList>
+        </actionDefinition>
+    </functionDefinitionList>
+</component>

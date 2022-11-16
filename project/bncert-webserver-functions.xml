@@ -1,0 +1,243 @@
+<component>
+    <name>bncertwebserverfunctions</name>
+    <show>0</show>
+    <functionDefinitionList>
+        <!-- TODO: Support additional web servers (NGINX) -->
+        <!-- Actions used exclusively inside this file -->
+        <actionDefinition name="bncertPopulateWebServerParameters">
+            <actionList>
+                <apachePopulateWebServerParameters/>
+                <!-- Common parameters -->
+                <setInstallerVariable name="web_server_dir" value="${installdir}/${web_server_dirname}"/>
+                <setInstallerVariable name="web_server_conf_dir" value="${web_server_dir}/conf"/>
+                <setInstallerVariable name="web_servers_supported_message">
+                <value>Currently only installations using the Apache web server are supported. Please follow the alternative approach described in this guide:
+
+https://docs.bitnami.com/general/how-to/generate-install-lets-encrypt-ssl/#alternative-approach
+
+</value>
+                </setInstallerVariable>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertWebServerConfigurationFiles">
+            <parameterList>
+                <stringParameter name="variable"/>
+            </parameterList>
+            <actionList>
+                <globalVariables names="${variable}"/>
+                <apacheConfigurationFiles variable="${variable}"/>
+            </actionList>
+        </actionDefinition>
+        <!-- Rules -->
+        <ruleDefinition name="bncertIsHttpsRedirectionEnabled">
+            <ruleList>
+                <apacheIsHttpsRedirectionEnabled/>
+            </ruleList>
+        </ruleDefinition>
+        <ruleDefinition name="bncertIsCustomHttpsRedirectionEnabled">
+            <ruleList>
+                <apacheIsCustomHttpsRedirectionEnabled/>
+            </ruleList>
+        </ruleDefinition>
+        <ruleDefinition name="bncertIsNonWwwToWwwRedirectionEnabled">
+            <ruleList>
+                <apacheIsNonWwwToWwwRedirectionEnabled/>
+            </ruleList>
+        </ruleDefinition>
+        <ruleDefinition name="bncertIsCustomNonWwwToWwwRedirectionEnabled">
+            <ruleList>
+                <apacheIsCustomNonWwwToWwwRedirectionEnabled/>
+            </ruleList>
+        </ruleDefinition>
+        <ruleDefinition name="bncertIsWwwToNonWwwRedirectionEnabled">
+            <ruleList>
+                <apacheIsWwwToNonWwwRedirectionEnabled/>
+            </ruleList>
+        </ruleDefinition>
+        <ruleDefinition name="bncertIsCustomWwwToNonWwwRedirectionEnabled">
+            <ruleList>
+                <apacheIsCustomWwwToNonWwwRedirectionEnabled/>
+            </ruleList>
+        </ruleDefinition>
+        <ruleDefinition name="bncertIsWebServerValid">
+            <actionList>
+                <bncertPopulateWebServerParameters/>
+                <bncertWebServerConfigurationFiles variable="web_server_conf_files"/>
+                <setInstallerVariable name="is_valid" value="1"/>
+                <!-- Ensure the configuration files exist and are both readable and writable -->
+                <foreach variables="conf_file" values="${web_server_conf_files}">
+                    <actionList>
+                        <setInstallerVariable name="is_valid" value="0">
+                            <ruleList>
+                                <fileTest condition="not_exists" path="${conf_file}"/>
+                                <!-- Do not check certificate files, which may have been changed by users -->
+                                <regExMatch pattern="^.*\.(crt|key)$" logic="does_not_match" text="${conf_file}"/>
+                            </ruleList>
+                        </setInstallerVariable>
+                    </actionList>
+                </foreach>
+            </actionList>
+            <ruleList>
+                <isTrue value="${is_valid}"/>
+            </ruleList>
+        </ruleDefinition>
+        <ruleDefinition name="bncertIsWebServerPermissionsValid">
+            <actionList>
+                <bncertPopulateWebServerParameters/>
+                <bncertWebServerConfigurationFiles variable="web_server_conf_files"/>
+                <setInstallerVariable name="is_valid" value="1"/>
+                <!-- Ensure the configuration files exist and are both readable and writable -->
+                <foreach variables="conf_file" values="${web_server_conf_files}">
+                    <actionList>
+                        <setInstallerVariable name="is_valid" value="0">
+                            <ruleList>
+                                <ruleGroup>
+                                    <ruleEvaluationLogic>or</ruleEvaluationLogic>
+                                    <ruleList>
+                                        <fileTest path="${conf_file}" condition="is_directory"/>
+                                        <fileTest path="${conf_file}" condition="not_readable"/>
+                                        <fileTest path="${conf_file}" condition="not_writable"/>
+                                    </ruleList>
+                                </ruleGroup>
+                                <!-- Do not check certificate files, which may have been changed by users -->
+                                <regExMatch pattern="^.*\.(crt|key)$" logic="does_not_match" text="${conf_file}"/>
+                            </ruleList>
+                        </setInstallerVariable>
+                    </actionList>
+                </foreach>
+            </actionList>
+            <ruleList>
+                <isTrue value="${is_valid}"/>
+            </ruleList>
+        </ruleDefinition>
+        <ruleDefinition name="bncertIsWebServerConfigurationValid">
+            <actionList>
+                <bncertPopulateWebServerParameters/>
+            </actionList>
+            <ruleList>
+                <apacheIsWebServerConfigurationValid/>
+            </ruleList>
+        </ruleDefinition>
+        <!-- Actions related to web server -->
+        <actionDefinition name="bncertBackupWebServerConfiguration">
+            <actionList>
+                <bncertWebServerConfigurationFiles variable="web_server_conf_files"/>
+                <foreach variables="conf_file" values="${web_server_conf_files}">
+                    <actionList>
+                        <backupFile file="${conf_file}"/>
+                    </actionList>
+                </foreach>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertRestoreWebServerConfiguration">
+            <actionList>
+                <bncertWebServerConfigurationFiles variable="web_server_conf_files"/>
+                <foreach variables="conf_file" values="${web_server_conf_files}">
+                    <actionList>
+                        <restoreFile file="${conf_file}"/>
+                    </actionList>
+                </foreach>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertStopWebServer">
+            <parameterList>
+                <stringParameter name="webServerName"/>
+            </parameterList>
+            <actionList>
+                <setInstallerVariable name="varnish_enabled" value="1">
+                    <ruleList>
+                        <isVarnishEnabled/>
+                    </ruleList>
+                </setInstallerVariable>
+                <manageService action="stop" service="varnish">
+                    <ruleList>
+                        <isTrue value="${varnish_enabled}"/>
+                    </ruleList>
+                </manageService>
+                <manageService action="stop" service="${webServerName}"/>
+                <waitForPort port="80" state="free" timeout="30000"/>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertStartWebServer">
+            <parameterList>
+                <stringParameter name="webServerName"/>
+            </parameterList>
+            <actionList>
+                <!-- Currently a restart is required because Bnconfig starts the web server before changing the configuration -->
+                <manageService action="restart" service="${webServerName}"/>
+                <manageService action="restart" service="varnish">
+                    <ruleList>
+                        <isTrue value="${varnish_enabled}"/>
+                    </ruleList>
+                </manageService>
+                <waitForPort port="80" state="in_use" timeout="30000"/>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertConfigureServerName">
+            <parameterList>
+                <stringParameter name="serverName"/>
+            </parameterList>
+            <actionList>
+                <apacheConfigureServerName serverName="${serverName}"/>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertConfigureCertificates">
+            <parameterList>
+                <stringParameter name="keyFile"/>
+                <stringParameter name="crtFile"/>
+            </parameterList>
+            <actionList>
+                <apacheConfigureCertificates keyFile="${keyFile}" crtFile="${crtFile}"/>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertEnableWebServerConfigurationPatches">
+            <actionList>
+                <apacheEnableConfigurationPatches/>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertDisableWebServerConfigurationPatches">
+            <actionList>
+                <apacheDisableConfigurationPatches/>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertEnableHttpsRedirection">
+            <actionList>
+                <apacheEnableHttpsRedirection/>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertDisableHttpsRedirection">
+            <actionList>
+                <apacheDisableHttpsRedirection/>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertEnableNonWwwToWwwRedirection">
+            <actionList>
+                <apacheEnableNonWwwToWwwRedirection/>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertDisableNonWwwToWwwRedirection">
+            <actionList>
+                <apacheDisableNonWwwToWwwRedirection/>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertEnableWwwToNonWwwRedirection">
+            <actionList>
+                <apacheEnableWwwToNonWwwRedirection/>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertDisableWwwToNonWwwRedirection">
+            <actionList>
+                <apacheDisableWwwToNonWwwRedirection/>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="bncertWebServerConfigureApp">
+            <parameterList>
+                <directoryParameter name="appDirectory"/>
+                <directoryParameter name="appWebDirectory"/>
+            </parameterList>
+            <actionList>
+                <apacheConfigureApp appDirectory="${appDirectory}" appWebDirectory="${appWebDirectory}"/>
+            </actionList>
+        </actionDefinition>
+    </functionDefinitionList>
+</component>

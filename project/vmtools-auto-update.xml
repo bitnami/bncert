@@ -1,0 +1,17 @@
+<component>
+    <name>autoupdater</name>
+    <description>autoupdater</description>
+    <folderList>
+        <folder>
+            <name>autoupdater</name>
+            <description>description autoupdater</description>
+            <distributionFileList>
+                <distributionDirectory>
+                    <origin>autoupdater</origin>
+                </distributionDirectory>
+            </distributionFileList>
+            <destination>${system_temp_directory}</destination>
+            <platforms>linux-arm64 linux-x64</platforms>
+        </folder>
+    </folderList>
+</component>
