@@ -2,16 +2,28 @@
     <name>bncertwebserverfunctions</name>
     <show>0</show>
     <functionDefinitionList>
-        <!-- TODO: Support additional web servers (NGINX) -->
         <!-- Actions used exclusively inside this file -->
         <actionDefinition name="bncertPopulateWebServerParameters">
             <actionList>
-                <apachePopulateWebServerParameters/>
+                <setInstallerVariable name="web_server_name" value=""/>
+                <apachePopulateWebServerParameters>
+                    <ruleEvaluationLogic>or</ruleEvaluationLogic>
+                    <ruleList>
+                        <fileExists path="${installdir}/apache"/>
+                        <fileExists path="${installdir}/apache2"/>
+                    </ruleList>
+                </apachePopulateWebServerParameters>
+                <nginxPopulateWebServerParameters>
+                  <ruleList>
+                        <!-- NGINX does not take precedence over previously detected web servers -->
+                        <stringTest text="${web_server_name}" type="empty"/>
+                        <!-- We will only support the NGINX web server for images based on Bash scripts -->
+                        <compareText text="${installation_type}" logic="equals" value="bash"/>
+                    </ruleList>
+                </nginxPopulateWebServerParameters>
                 <!-- Common parameters -->
-                <setInstallerVariable name="web_server_dir" value="${installdir}/${web_server_dirname}"/>
-                <setInstallerVariable name="web_server_conf_dir" value="${web_server_dir}/conf"/>
                 <setInstallerVariable name="web_servers_supported_message">
-                <value>Currently only installations using the Apache web server are supported. Please follow the alternative approach described in this guide:
+                <value>Currently only installations using the Apache or NGINX web servers are supported. Please follow the alternative approach described in this guide:
 
 https://docs.bitnami.com/general/how-to/generate-install-lets-encrypt-ssl/#alternative-approach
 
@@ -25,38 +37,89 @@ https://docs.bitnami.com/general/how-to/generate-install-lets-encrypt-ssl/#alter
             </parameterList>
             <actionList>
                 <globalVariables names="${variable}"/>
-                <apacheConfigurationFiles variable="${variable}"/>
+                <apacheConfigurationFiles variable="${variable}">
+                    <ruleList>
+                        <compareText text="${web_server_name}" logic="equals" value="apache"/>
+                    </ruleList>
+                </apacheConfigurationFiles>
+                <nginxConfigurationFiles variable="${variable}">
+                    <ruleList>
+                        <compareText text="${web_server_name}" logic="equals" value="nginx"/>
+                    </ruleList>
+                </nginxConfigurationFiles>
             </actionList>
         </actionDefinition>
         <!-- Rules -->
         <ruleDefinition name="bncertIsHttpsRedirectionEnabled">
+            <ruleEvaluationLogic>or</ruleEvaluationLogic>
             <ruleList>
-                <apacheIsHttpsRedirectionEnabled/>
+                <ruleGroup>
+                    <ruleList>
+                        <apacheIsHttpsRedirectionEnabled/>
+                        <compareText text="${web_server_name}" logic="equals" value="apache"/>
+                    </ruleList>
+                </ruleGroup>
+                <!-- TODO: Support this method for the NGINX web server -->
             </ruleList>
         </ruleDefinition>
         <ruleDefinition name="bncertIsCustomHttpsRedirectionEnabled">
+            <ruleEvaluationLogic>or</ruleEvaluationLogic>
             <ruleList>
-                <apacheIsCustomHttpsRedirectionEnabled/>
+                <ruleGroup>
+                    <ruleList>
+                        <apacheIsCustomHttpsRedirectionEnabled/>
+                        <compareText text="${web_server_name}" logic="equals" value="apache"/>
+                    </ruleList>
+                </ruleGroup>
+                <!-- TODO: Support this method for the NGINX web server -->
             </ruleList>
         </ruleDefinition>
         <ruleDefinition name="bncertIsNonWwwToWwwRedirectionEnabled">
+            <ruleEvaluationLogic>or</ruleEvaluationLogic>
             <ruleList>
-                <apacheIsNonWwwToWwwRedirectionEnabled/>
+                <ruleGroup>
+                    <ruleList>
+                        <apacheIsNonWwwToWwwRedirectionEnabled/>
+                        <compareText text="${web_server_name}" logic="equals" value="apache"/>
+                    </ruleList>
+                </ruleGroup>
+                <!-- TODO: Support this method for the NGINX web server -->
             </ruleList>
         </ruleDefinition>
         <ruleDefinition name="bncertIsCustomNonWwwToWwwRedirectionEnabled">
+            <ruleEvaluationLogic>or</ruleEvaluationLogic>
             <ruleList>
-                <apacheIsCustomNonWwwToWwwRedirectionEnabled/>
+                <ruleGroup>
+                    <ruleList>
+                        <apacheIsCustomNonWwwToWwwRedirectionEnabled/>
+                        <compareText text="${web_server_name}" logic="equals" value="apache"/>
+                    </ruleList>
+                </ruleGroup>
+                <!-- TODO: Support this method for the NGINX web server -->
             </ruleList>
         </ruleDefinition>
         <ruleDefinition name="bncertIsWwwToNonWwwRedirectionEnabled">
+            <ruleEvaluationLogic>or</ruleEvaluationLogic>
             <ruleList>
-                <apacheIsWwwToNonWwwRedirectionEnabled/>
+                <ruleGroup>
+                    <ruleList>
+                        <apacheIsWwwToNonWwwRedirectionEnabled/>
+                        <compareText text="${web_server_name}" logic="equals" value="apache"/>
+                    </ruleList>
+                </ruleGroup>
+                <!-- TODO: Support this method for the NGINX web server -->
             </ruleList>
         </ruleDefinition>
         <ruleDefinition name="bncertIsCustomWwwToNonWwwRedirectionEnabled">
+            <ruleEvaluationLogic>or</ruleEvaluationLogic>
             <ruleList>
-                <apacheIsCustomWwwToNonWwwRedirectionEnabled/>
+                <ruleGroup>
+                    <ruleList>
+                        <apacheIsCustomWwwToNonWwwRedirectionEnabled/>
+                        <compareText text="${web_server_name}" logic="equals" value="apache"/>
+                    </ruleList>
+                </ruleGroup>
+                <!-- TODO: Support this method for the NGINX web server -->
             </ruleList>
         </ruleDefinition>
         <ruleDefinition name="bncertIsWebServerValid">
@@ -114,8 +177,18 @@ https://docs.bitnami.com/general/how-to/generate-install-lets-encrypt-ssl/#alter
             <actionList>
                 <bncertPopulateWebServerParameters/>
             </actionList>
+            <ruleEvaluationLogic>or</ruleEvaluationLogic>
             <ruleList>
-                <apacheIsWebServerConfigurationValid/>
+                <apacheIsWebServerConfigurationValid>
+                    <ruleList>
+                        <compareText text="${web_server_name}" logic="equals" value="apache"/>
+                    </ruleList>
+                </apacheIsWebServerConfigurationValid>
+                <nginxIsWebServerConfigurationValid>
+                    <ruleList>
+                        <compareText text="${web_server_name}" logic="equals" value="nginx"/>
+                    </ruleList>
+                </nginxIsWebServerConfigurationValid>
             </ruleList>
         </ruleDefinition>
         <!-- Actions related to web server -->
@@ -178,7 +251,11 @@ https://docs.bitnami.com/general/how-to/generate-install-lets-encrypt-ssl/#alter
                 <stringParameter name="serverName"/>
             </parameterList>
             <actionList>
-                <apacheConfigureServerName serverName="${serverName}"/>
+                <apacheConfigureServerName serverName="${serverName}">
+                    <ruleList>
+                        <compareText text="${web_server_name}" logic="equals" value="apache"/>
+                    </ruleList>
+                </apacheConfigureServerName>
             </actionList>
         </actionDefinition>
         <actionDefinition name="bncertConfigureCertificates">
@@ -187,47 +264,96 @@ https://docs.bitnami.com/general/how-to/generate-install-lets-encrypt-ssl/#alter
                 <stringParameter name="crtFile"/>
             </parameterList>
             <actionList>
-                <apacheConfigureCertificates keyFile="${keyFile}" crtFile="${crtFile}"/>
+                <apacheConfigureCertificates keyFile="${keyFile}" crtFile="${crtFile}">
+                    <ruleList>
+                        <compareText text="${web_server_name}" logic="equals" value="apache"/>
+                    </ruleList>
+                </apacheConfigureCertificates>
+                <nginxConfigureCertificates keyFile="${keyFile}" crtFile="${crtFile}">
+                    <ruleList>
+                        <compareText text="${web_server_name}" logic="equals" value="nginx"/>
+                    </ruleList>
+                </nginxConfigureCertificates>
             </actionList>
         </actionDefinition>
         <actionDefinition name="bncertEnableWebServerConfigurationPatches">
             <actionList>
-                <apacheEnableConfigurationPatches/>
+                <apacheEnableConfigurationPatches>
+                    <ruleList>
+                        <compareText text="${web_server_name}" logic="equals" value="apache"/>
+                    </ruleList>
+                </apacheEnableConfigurationPatches>
+                <!-- TODO: Support this method for the NGINX web server -->
             </actionList>
         </actionDefinition>
         <actionDefinition name="bncertDisableWebServerConfigurationPatches">
             <actionList>
-                <apacheDisableConfigurationPatches/>
+                <apacheDisableConfigurationPatches>
+                    <ruleList>
+                        <compareText text="${web_server_name}" logic="equals" value="apache"/>
+                    </ruleList>
+                </apacheDisableConfigurationPatches>
+                <!-- TODO: Support this method for the NGINX web server -->
             </actionList>
         </actionDefinition>
         <actionDefinition name="bncertEnableHttpsRedirection">
             <actionList>
-                <apacheEnableHttpsRedirection/>
+                <apacheEnableHttpsRedirection>
+                    <ruleList>
+                        <compareText text="${web_server_name}" logic="equals" value="apache"/>
+                    </ruleList>
+                </apacheEnableHttpsRedirection>
+                <!-- TODO: Support this method for the NGINX web server -->
             </actionList>
         </actionDefinition>
         <actionDefinition name="bncertDisableHttpsRedirection">
             <actionList>
-                <apacheDisableHttpsRedirection/>
+                <apacheDisableHttpsRedirection>
+                    <ruleList>
+                        <compareText text="${web_server_name}" logic="equals" value="apache"/>
+                    </ruleList>
+                </apacheDisableHttpsRedirection>
+                <!-- TODO: Support this method for the NGINX web server -->
             </actionList>
         </actionDefinition>
         <actionDefinition name="bncertEnableNonWwwToWwwRedirection">
             <actionList>
-                <apacheEnableNonWwwToWwwRedirection/>
+                <apacheEnableNonWwwToWwwRedirection>
+                    <ruleList>
+                        <compareText text="${web_server_name}" logic="equals" value="apache"/>
+                    </ruleList>
+                </apacheEnableNonWwwToWwwRedirection>
+                <!-- TODO: Support this method for the NGINX web server -->
             </actionList>
         </actionDefinition>
         <actionDefinition name="bncertDisableNonWwwToWwwRedirection">
             <actionList>
-                <apacheDisableNonWwwToWwwRedirection/>
+                <apacheDisableNonWwwToWwwRedirection>
+                    <ruleList>
+                        <compareText text="${web_server_name}" logic="equals" value="apache"/>
+                    </ruleList>
+                </apacheDisableNonWwwToWwwRedirection>
+                <!-- TODO: Support this method for the NGINX web server -->
             </actionList>
         </actionDefinition>
         <actionDefinition name="bncertEnableWwwToNonWwwRedirection">
             <actionList>
-                <apacheEnableWwwToNonWwwRedirection/>
+                <apacheEnableWwwToNonWwwRedirection>
+                    <ruleList>
+                        <compareText text="${web_server_name}" logic="equals" value="apache"/>
+                    </ruleList>
+                </apacheEnableWwwToNonWwwRedirection>
+                <!-- TODO: Support this method for the NGINX web server -->
             </actionList>
         </actionDefinition>
         <actionDefinition name="bncertDisableWwwToNonWwwRedirection">
             <actionList>
-                <apacheDisableWwwToNonWwwRedirection/>
+                <apacheDisableWwwToNonWwwRedirection>
+                    <ruleList>
+                        <compareText text="${web_server_name}" logic="equals" value="apache"/>
+                    </ruleList>
+                </apacheDisableWwwToNonWwwRedirection>
+                <!-- TODO: Support this method for the NGINX web server -->
             </actionList>
         </actionDefinition>
         <actionDefinition name="bncertWebServerConfigureApp">
@@ -236,7 +362,16 @@ https://docs.bitnami.com/general/how-to/generate-install-lets-encrypt-ssl/#alter
                 <directoryParameter name="appWebDirectory"/>
             </parameterList>
             <actionList>
-                <apacheConfigureApp appDirectory="${appDirectory}" appWebDirectory="${appWebDirectory}"/>
+                <apacheConfigureApp appDirectory="${appDirectory}" appWebDirectory="${appWebDirectory}">
+                    <ruleList>
+                        <compareText text="${web_server_name}" logic="equals" value="apache"/>
+                    </ruleList>
+                </apacheConfigureApp>
+                <nginxConfigureApp appDirectory="${appDirectory}" appWebDirectory="${appWebDirectory}">
+                    <ruleList>
+                        <compareText text="${web_server_name}" logic="equals" value="nginx"/>
+                    </ruleList>
+                </nginxConfigureApp>
             </actionList>
         </actionDefinition>
     </functionDefinitionList>

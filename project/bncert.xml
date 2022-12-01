@@ -29,6 +29,7 @@
         <include file="vmtools-auto-update.xml"/>
         <!-- Functions and rules -->
         <include file="bncert-webserver-apache-functions.xml"/>
+        <include file="bncert-webserver-nginx-functions.xml"/>
         <include file="bncert-webserver-functions.xml"/>
         <include file="bncert-letsencrypt-functions.xml"/>
         <include file="bncert-functions.xml"/>
@@ -551,6 +552,7 @@
         <stringParameter name="web_server_reload_command" ask="0"/>
         <directoryParameter name="web_server_dir" ask="0"/>
         <directoryParameter name="web_server_conf_dir" ask="0"/>
+        <stringParameter name="web_servers_with_limited_support" value="nginx" ask="0" cliOptionShow="0"/>
     </parameterList>
     <installationAbortedActionList>
         <!-- Restore the configuration if a failure occurred -->

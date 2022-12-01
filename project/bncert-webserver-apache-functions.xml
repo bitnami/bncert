@@ -339,6 +339,8 @@ file rename -force $tmpFile $file
                         <compareText text="${installation_type}" logic="equals" value="bash"/>
                     </ruleList>
                 </setInstallerVariable>
+                <setInstallerVariable name="web_server_dir" value="${installdir}/${web_server_dirname}"/>
+                <setInstallerVariable name="web_server_conf_dir" value="${web_server_dir}/conf"/>
                 <setInstallerVariable name="web_server_reload_command" value="${web_server_dir}/bin/httpd -f ${web_server_conf_dir}/httpd.conf -k graceful"/>
             </actionList>
         </actionDefinition>
