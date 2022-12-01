@@ -494,7 +494,7 @@ ${targetDir}/${project.shortName}-tool ${installer_command_line_arguments}
                     <actionList>
                         <createTimeStamp format="%Y%m%d%H%M%S" variable="timestamp"/>
                         <setInstallerVariable name="tempFile" value="${system_temp_directory}/cron${timestamp}"/>
-                        <writeFile path="${tempFile}" text="${cron_stdout}"/>
+                        <writeFile path="${tempFile}" text="${cron_stdout}&#xA;"/>
                         <substitute files="${tempFile}">
                             <substitutionList>
                                 <substitution pattern="^.*# ${id}$" value=""/>
