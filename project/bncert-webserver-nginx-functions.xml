@@ -1,0 +1,82 @@
+<component>
+    <name>bncertwebservernginxfunctions</name>
+    <show>0</show>
+    <functionDefinitionList>
+        <!-- Rules -->
+        <ruleDefinition name="nginxIsWebServerConfigurationValid">
+            <actionList>
+                <runProgram program="${web_server_dir}/sbin/nginx" programArguments="-c ${web_server_conf_dir}/nginx.conf -t" abortOnError="0" showMessageOnError="0"/>
+                <setInstallerVariable name="webserver_conf_error" value="${program_stdout}&#xA;${program_stderr}"/>
+            </actionList>
+            <ruleList>
+                <compareText text="${program_exit_code}" logic="equals" value="0"/>
+            </ruleList>
+        </ruleDefinition>
+        <!-- Populate metadata -->
+        <actionDefinition name="nginxPopulateWebServerParameters">
+            <actionList>
+                <setInstallerVariable name="web_server_name" value="nginx"/>
+                <setInstallerVariable name="web_server_fullname" value="NGINX"/>
+                <setInstallerVariable name="web_server_dirname" value="nginx"/>
+                <setInstallerVariable name="web_server_dir" value="${installdir}/${web_server_dirname}"/>
+                <setInstallerVariable name="web_server_conf_dir" value="${web_server_dir}/conf"/>
+                <setInstallerVariable name="web_server_reload_command" value="${web_server_dir}/sbin/nginx -s reload"/>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="nginxConfigurationFiles">
+            <parameterList>
+                <stringParameter name="variable"/>
+            </parameterList>
+            <actionList>
+                <globalVariables names="${variable}"/>
+                <baseGlob pattern="${web_server_conf_dir}/server_blocks/*-server-block.conf" variable="server_block_files"/>
+                <setInstallerVariable name="${variable}" value="${web_server_conf_dir}/nginx.conf ${server_block_files}"/>
+            </actionList>
+        </actionDefinition>
+        <!-- Actions -->
+        <actionDefinition name="nginxConfigureCertificates">
+            <parameterList>
+                <stringParameter name="keyFile"/>
+                <stringParameter name="crtFile"/>
+            </parameterList>
+            <actionList>
+                <foreach variables="type" values="key crt">
+                    <actionList>
+                        <setInstallerVariableFromRegEx name="basename" pattern=".*\/([^/]+)" substitution="\1" text="${${type}File}"/>
+                        <setInstallerVariable name="dest_${type}_file" value="${web_server_conf_dir}/${basename}"/>
+                        <!-- We already backed it up, so we can safely replace it -->
+                        <deleteFile path="${dest_${type}_file}"/>
+                        <createSymLink target="${${type}File}" linkName="${dest_${type}_file}"/>
+                    </actionList>
+                </foreach>
+                <nginxConfigurationFiles variable="server_block_files"/>
+                <foreach variables="server_block_file" values="${server_block_files}">
+                    <actionList>
+                        <substitute type="regexp" files="${server_block_file}">
+                            <substitutionList>
+                                <substitution pattern="ssl_certificate_key\s+.*" value="ssl_certificate_key  ${dest_key_file};"/>
+                                <substitution pattern="ssl_certificate\s+.*" value="ssl_certificate      ${dest_crt_file};"/>
+                            </substitutionList>
+                        </substitute>
+                    </actionList>
+                </foreach>
+            </actionList>
+        </actionDefinition>
+        <actionDefinition name="nginxConfigureApp">
+            <parameterList>
+                <directoryParameter name="appDirectory"/>
+                <directoryParameter name="appWebDirectory"/>
+            </parameterList>
+            <actionList>
+                <!-- We clean the directory, in order to avoid an issue where an inconsistent run is not configuring the app because it already exists -->
+                <writeFile path="${web_server_conf_dir}/bitnami/bncert.conf">
+                    <text>location ^~ /.well-known {
+  default_type "text/plain";
+  alias ${appWebDirectory};
+}
+</text>
+                </writeFile>
+            </actionList>
+        </actionDefinition>
+    </functionDefinitionList>
+</component>

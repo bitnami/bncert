@@ -52,6 +52,17 @@
                         <compareText text=" ${bitnami_stacks_with_disabled_redirections} " logic="contains" value=" ${stack_key} "/>
                     </ruleList>
                 </actionGroup>
+                <actionGroup>
+                    <actionList>
+                        <setInstallerVariable name="enable_redirections" value="0"/>
+                        <setInstallerVariable name="configure_server_name" value="0"/>
+                        <showWarning text="Support for the ${web_server_name} web server is limited. This tool will only be able to generate HTTPS certificates and configure certificate renewal. It will not enable/disable redirections or apply other types of server configurations."/>
+                    </actionList>
+                    <ruleList>
+                        <isTrue value="${enable_redirections}"/>
+                        <compareText text=" ${web_servers_with_limited_support} " logic="contains" value=" ${web_server_name} "/>
+                    </ruleList>
+                </actionGroup>
                 <!-- We won't support adding redirections if the users manually add any by themselves, in order to avoid possible issues -->
                 <actionGroup>
                     <actionList>
