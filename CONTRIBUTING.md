@@ -1,16 +1,48 @@
-# Contributing
+# Contributing Guidelines
 
-We'd love for you to contribute to this project. You can do that by either submitting issues or pull requests.
+Contributions are welcome via GitHub Pull Requests. This document outlines the process to help get your contribution accepted.
 
-# Submitting Changes
+Any type of contribution is welcome: new features, bug fixes, documentation improvements, etc.
 
-Before submitting a change:
+## How to Contribute
 
-* Verify that every commit passes all tests (make test)
-* Include tests for the new feature of bug fix
-* Make sure the code passes the included linter rules (make lint)
+1. Fork this repository, develop, and test your changes.
+2. Submit a pull request.
 
-Once every works as expected:
+### Requirements
 
-* Push your changes to a branch in your fork of the repository
-* Submit a pull request
+When submitting a PR make sure that:
+- It must pass CI jobs for linting and test the changes (if any).
+- The title of the PR is clear enough.
+- If necessary, add information to the repository's `README.md`.
+
+#### Sign Your Work
+
+The sign-off is a simple line at the end of the explanation for a commit. All commits needs to be signed. Your signature certifies that you wrote the patch or otherwise have the right to contribute the material. The rules are pretty simple, you only need to certify the guidelines from [developercertificate.org](https://developercertificate.org/).
+
+Then you just add a line to every git commit message:
+
+    Signed-off-by: Joe Smith <joe.smith@example.com>
+
+Use your real name (sorry, no pseudonyms or anonymous contributions.)
+
+If you set your `user.name` and `user.email` git configs, you can sign your commit automatically with `git commit -s`.
+
+Note: If your git config information is set properly then viewing the `git log` information for your commit will look something like this:
+
+```
+Author: Joe Smith <joe.smith@example.com>
+Date:   Thu Feb 2 11:41:15 2018 -0800
+
+    Update README
+
+    Signed-off-by: Joe Smith <joe.smith@example.com>
+```
+
+Notice the `Author` and `Signed-off-by` lines match. If they don't your PR will be rejected by the automated DCO check.
+
+### PR Approval and Release Process
+
+1. Changes are manually reviewed by Bitnami team members usually within a business day.
+2. Once the changes are accepted, the PR is tested (if needed) into the Bitnami CI pipeline.
+3. The PR is merged by the reviewer(s) in the GitHub `main` branch.
