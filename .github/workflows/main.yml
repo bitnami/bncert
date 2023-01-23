@@ -14,11 +14,9 @@ jobs:
     env:
       INSTALLBUILDER: installbuilder
       INSTALLBUILDER_LICENSE: ${{ secrets.INSTALLBUILDER_LICENSE }}
+      INSTALLBUILDER_VERSION: ${{ secrets.INSTALLBUILDER_VERSION }}
     steps:
       - uses: actions/checkout@v3
-      - name: Get latest VMware InstallBuilder version
-        id: get-installbuilder-version
-        run: printf "INSTALLBUILDER_VERSION=%s\n" $(curl -sSL https://installbuilder.com/download-installbuilder-for-qt-step-2.html | grep -oE 'installbuilder-qt-enterprise-([^-]+)-linux-x64-installer.run' | sed -E 's/installbuilder-qt-enterprise-([^-]+)-linux-x64-installer.run/\1/') >> $GITHUB_OUTPUT
       - name: Download and install VMware InstallBuilder
         run: |
           set -e
