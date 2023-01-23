@@ -20,7 +20,7 @@ jobs:
       - name: Download and install VMware InstallBuilder
         run: |
           set -e
-          curl -sSL https://installbuilder.com/installbuilder-qt-enterprise-${{ steps.get-installbuilder-version.outputs.INSTALLBUILDER_VERSION }}-linux-x64-installer.run -o installbuilder.run
+          curl -sSL https://installbuilder.com/installbuilder-qt-enterprise-$INSTALLBUILDER_VERSION-linux-x64-installer.run -o installbuilder.run
           chmod a+x installbuilder.run
           ./installbuilder.run --prefix "$INSTALLBUILDER" --mode unattended
           echo "$INSTALLBUILDER_LICENSE" > "${INSTALLBUILDER}/license.xml"
