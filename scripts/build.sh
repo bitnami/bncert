@@ -37,7 +37,7 @@ for arch in amd64 arm64; do
     cp "${INSTALLBUILDER}/autoupdate/output/autoupdate-${INSTALLBUILDER_TARGET}.run" "output-${arch}/autoupdater/autoupdate-${INSTALLBUILDER_TARGET}.run"
 
     # Build tool with VMware InstallBuilder
-    "${INSTALLBUILDER}/bin/builder" build "output-${arch}/bncert.xml" linux-x64 --setvars \
+    "${INSTALLBUILDER}/bin/builder" build "output-${arch}/bncert.xml" "$INSTALLBUILDER_TARGET" --setvars \
         project.version="$VERSION" \
         project.versionId="$VERSION_ID" \
         bitnami_stacks_with_disabled_redirections="${BITNAMI_STACKS_WITH_DISABLED_REDIRECTIONS[*]}" \
