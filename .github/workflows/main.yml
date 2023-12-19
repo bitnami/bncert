@@ -20,7 +20,7 @@ jobs:
       - name: Download and install VMware InstallBuilder
         run: |
           set -e
-          curl -sSL https://downloads.bitnami.com/files/downloads/installbuilder-qt-enterprise-$INSTALLBUILDER_VERSION-linux-x64-installer.run -o installbuilder.run
+          curl -sSL https://releases.installbuilder.com/installbuilder/installbuilder-qt-enterprise-$INSTALLBUILDER_VERSION-linux-x64-installer.run -o installbuilder.run
           chmod a+x installbuilder.run
           ./installbuilder.run --prefix "$INSTALLBUILDER" --mode unattended
           echo "$INSTALLBUILDER_LICENSE" > "${INSTALLBUILDER}/license.xml"
@@ -76,15 +76,22 @@ jobs:
     runs-on: ubuntu-20.04
     name: Upload
     env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.S3_USER }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_PASSWORD }}
-      AWS_DEFAULT_REGION: us-east-1
       S3_URL: ${{ secrets.S3_URL }}
     steps:
       - uses: actions/checkout@v3
       - uses: actions/download-artifact@v3
         with:
           path: ./artifacts
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-duration-seconds: 1200
+          role-session-name: MySessionName
+          role-skip-session-tagging: true
       - name: Upload to S3 bucket
         run: |
           set -e
