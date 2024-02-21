@@ -561,40 +561,6 @@ ${targetDir}/${project.shortName}-tool ${installer_command_line_arguments}
                 <isServiceRunning service="varnish"/>
             </ruleList>
         </ruleDefinition>
-        <ruleDefinition name="validateDomainIpAddressResolution">
-            <parameterList>
-                <stringParameter name="domain"/>
-                <stringParameter name="ipAddress"/>
-            </parameterList>
-            <actionList>
-                <setInstallerVariable name="detected_ip_address" value=""/>
-                <runProgram program="getent" programArguments="hosts ${domain}" abortOnError="0" showMessageOnError="0"/>
-                <setInstallerVariableFromRegEx name="detected_ip_address" pattern="^([0-9.]+)\s.*$" substitution="\1" text="${program_stdout}">
-                    <ruleList>
-                        <regExMatch text="${program_stdout}" logic="matches" pattern="^([0-9.]+)\s.*$"/>
-                        <compareText text="${program_exit_code}" logic="equals" value="0"/>
-                    </ruleList>
-                </setInstallerVariableFromRegEx>
-            </actionList>
-            <ruleList>
-                <compareText text="${detected_ip_address}" logic="equals" value="${ipAddress}"/>
-            </ruleList>
-        </ruleDefinition>
-        <actionDefinition name="getPublicIpAddress">
-            <parameterList>
-                <stringParameter name="variable"/>
-            </parameterList>
-            <actionList>
-                <!-- Get the public IP from myip.bitnami.com -->
-                <globalVariables names="${variable}"/>
-                <generateRandomValue length="10" variable="suffix"/>
-                <setInstallerVariable name="filename" value="${system_temp_directory}/myip${suffix}.tmp"/>
-                <httpGet url="http://myip.bitnami.com" filename="${filename}" abortOnError="0" showMessageOnError="0"/>
-                <readFile path="${filename}" name="${variable}"/>
-                <deleteFile path="${filename}"/>
-                <logMessage text="Detected public IP address: '${${variable}}'"/>
-            </actionList>
-        </actionDefinition>
         <actionDefinition name="grepText">
             <parameterList>
                 <stringParameter name="text"/>

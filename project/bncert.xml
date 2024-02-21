@@ -223,19 +223,6 @@
                         <regExMatch pattern="[a-z0-9.-]{64}" logic="matches" text="${domains}"/>
                     </ruleList>
                 </throwError>
-                <showProgressDialog title="Validating domains">
-                    <actionList>
-                        <!-- Validate domain DNS entries -->
-                        <foreach variables="domain" values="${domains}">
-                            <actionList>
-                                <bncertValidateDomain domain="${domain}" progressText="Validating domain '${domain}'"/>
-                            </actionList>
-                            <ruleList>
-                                <isTrue value="${perform_dns_validation}"/>
-                            </ruleList>
-                        </foreach>
-                    </actionList>
-                </showProgressDialog>
             </validationActionList>
         </parameterGroup>
         <!-- The below parameter is skipped, but we will return to it if the user rejects the list of proposed changes -->
@@ -306,16 +293,6 @@
             <validationActionList>
                 <showProgressDialog title="Performing validations">
                     <actionList>
-                        <!-- Validate domain DNS entries -->
-                        <!-- This time we also validate automatically added domains (e.g. www.example.com if only example.com was added) -->
-                        <foreach variables="domain" values="${domains}">
-                            <actionList>
-                                <bncertValidateDomain domain="${domain}" progressText="Validating domain '${domain}'"/>
-                            </actionList>
-                            <ruleList>
-                                <isTrue value="${perform_dns_validation}"/>
-                            </ruleList>
-                        </foreach>
                         <!-- We stop the web server at this point, in order to verify we can proceed with the setup -->
                         <bncertStopWebServer webServerName="${web_server_name}" progressText="Stopping web server">
                             <ruleList>

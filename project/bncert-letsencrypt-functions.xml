@@ -427,7 +427,8 @@ Please check our documentation and support forums, we'll be happy to help!
                 <writeFile path="${lego_app_dir}/.well-known/${tmpFile}" text="${randomString}"/>
                 <foreach variables="domain" values="${domains}">
                     <actionList>
-                        <httpGet abortOnError="0" showMessageOnError="0" url="https://${domain}/.well-known/${tmpFile}" filename="${system_temp_directory}/${tmpFile}"/>
+                        <!-- httpGet can't handle IPv6 connections -->
+                        <runProgram abortOnError="0" showMessageOnError="1" program="curl" programArguments="-L 'https://${domain}/.well-known/${tmpFile}' -o '${system_temp_directory}/${tmpFile}'"/>
                         <readFile abortOnError="0" showMessageOnError="0" path="${system_temp_directory}/${tmpFile}" name="result"/>
                         <actionGroup>
                             <actionList>

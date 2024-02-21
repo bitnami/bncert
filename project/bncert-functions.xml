@@ -84,55 +84,6 @@
                 </actionGroup>
             </actionList>
         </actionDefinition>
-        <actionDefinition name="bncertValidateDomain">
-            <parameterList>
-                <stringParameter name="domain"/>
-            </parameterList>
-            <actionList>
-                <setInstallerVariable name="ignore_public_ip_warning" value="no"/>
-                <!-- Obtain public IP address, but only once -->
-                <actionGroup>
-                    <actionList>
-                        <getPublicIpAddress variable="machine_public_ipaddr" progressText="Determining machine public IP address"/>
-                        <actionGroup>
-                            <actionList>
-                                <showQuestion title="Could not detect public IP address" text="&#xA;The public IP address for this machine could not be detected. A public IP address will be required for Let's Encrypt to verify that your domains point to this machine. Do you want to proceed anyways?" variable="ignore_public_ip_warning" default="no"/>
-                                <throwError text="Please check public IP configuration for this machine. For more info see: https://docs.bitnami.com/general/faq/configuration/configure-static-address/">
-                                    <ruleList>
-                                        <isFalse value="${ignore_public_ip_warning}"/>
-                                    </ruleList>
-                                </throwError>
-                            </actionList>
-                            <ruleList>
-                                <stringTest text="${machine_public_ipaddr}" type="empty"/>
-                            </ruleList>
-                        </actionGroup>
-                    </actionList>
-                    <ruleList>
-                        <isTrue value="${perform_public_ip_validation}"/>
-                        <stringTest text="${machine_public_ipaddr}" type="empty"/>
-                        <isFalse value="${ignore_public_ip_warning}"/>
-                    </ruleList>
-                </actionGroup>
-                <!-- Now validate the domain DNS and ensure the IP matches -->
-                <if>
-                    <conditionRuleList>
-                        <hostValidation host="${domain}" type="hostname" condition="is_not_valid"/>
-                    </conditionRuleList>
-                    <actionList>
-                        <throwError text="The domain '${domain}' does not resolve, please fix its DNS entries or remove it."/>
-                    </actionList>
-                    <elseActionList>
-                        <throwError text="The domain '${domain}' resolves to a different IP address than the one detected for this machine, which is '${machine_public_ipaddr}'. Please fix its DNS entries or remove it. For more info see: https://docs.bitnami.com/general/faq/configuration/configure-custom-domain/">
-                            <ruleList>
-                                <validateDomainIpAddressResolution domain="${domain}" ipAddress="${machine_public_ipaddr}" negate="1"/>
-                                <isTrue value="${perform_public_ip_validation}"/>
-                            </ruleList>
-                        </throwError>
-                    </elseActionList>
-                </if>
-            </actionList>
-        </actionDefinition>
         <!-- Parameters for updating metadata -->
         <actionDefinition name="bncertDetectMissingDomains">
             <parameterList>
