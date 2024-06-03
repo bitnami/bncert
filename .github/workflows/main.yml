@@ -14,13 +14,13 @@ jobs:
     env:
       INSTALLBUILDER: installbuilder
       INSTALLBUILDER_LICENSE: ${{ secrets.INSTALLBUILDER_LICENSE }}
-      INSTALLBUILDER_VERSION: ${{ secrets.INSTALLBUILDER_VERSION }}
     steps:
       - uses: actions/checkout@v3
-      - name: Download and install VMware InstallBuilder
+      - name: Download and install InstallBuilder
         run: |
           set -e
-          curl -sSL https://releases.installbuilder.com/installbuilder/installbuilder-qt-enterprise-$INSTALLBUILDER_VERSION-linux-x64-installer.run -o installbuilder.run
+          INSTALLBUILDER_VERSION=$(curl --fail https://installbuilder.com/VERSION)
+          curl --fail -sSL https://releases.installbuilder.com/installbuilder/installbuilder-qt-enterprise-$INSTALLBUILDER_VERSION-linux-x64-installer.run -o installbuilder.run
           chmod a+x installbuilder.run
           ./installbuilder.run --prefix "$INSTALLBUILDER" --mode unattended
           echo "$INSTALLBUILDER_LICENSE" > "${INSTALLBUILDER}/license.xml"
