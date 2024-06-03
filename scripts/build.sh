@@ -32,11 +32,11 @@ for arch in amd64 arm64; do
         -e "s/@@VERSION@@/${VERSION}/g" \
         -e "s/@@VERSION_ID@@/${VERSION_ID}/g" \
         "output-${arch}"/{*,*/*}.*
-    # Build auto-updater tool with VMware InstallBuilder
+    # Build auto-updater tool with InstallBuilder
     "${INSTALLBUILDER}/autoupdate/bin/customize.run" build "output-${arch}/bncert-auto-updater.xml" "$INSTALLBUILDER_TARGET"
     cp "${INSTALLBUILDER}/autoupdate/output/autoupdate-${INSTALLBUILDER_TARGET}.run" "output-${arch}/autoupdater/autoupdate-${INSTALLBUILDER_TARGET}.run"
 
-    # Build tool with VMware InstallBuilder
+    # Build tool with InstallBuilder
     "${INSTALLBUILDER}/bin/builder" build "output-${arch}/bncert.xml" "$INSTALLBUILDER_TARGET" --setvars \
         project.version="$VERSION" \
         project.versionId="$VERSION_ID" \
