@@ -15,7 +15,7 @@ jobs:
       INSTALLBUILDER: installbuilder
       INSTALLBUILDER_LICENSE: ${{ secrets.INSTALLBUILDER_LICENSE }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Download and install InstallBuilder
         run: |
           set -e
@@ -28,7 +28,7 @@ jobs:
         run: ./scripts/build.sh
       - name: Copy release files
         run: cp output-*/bncert-*.run output-amd64/bncert-update.xml .
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
         with:
           name: release
           path: |
@@ -42,8 +42,8 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/download-artifact@v3
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
         with:
           path: ./artifacts
       - name: Set tag name
@@ -78,12 +78,12 @@ jobs:
     env:
       S3_URL: ${{ secrets.S3_URL }}
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/download-artifact@v3
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
         with:
           path: ./artifacts
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
