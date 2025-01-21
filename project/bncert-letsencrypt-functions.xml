@@ -428,7 +428,7 @@ Please check our documentation and support forums, we'll be happy to help!
                 <foreach variables="domain" values="${domains}">
                     <actionList>
                         <!-- httpGet can't handle IPv6 connections -->
-                        <runProgram abortOnError="0" showMessageOnError="1" program="curl" programArguments="-L -k 'https://${domain}/.well-known/${tmpFile}' -o '${system_temp_directory}/${tmpFile}'"/>
+                        <runProgram abortOnError="0" showMessageOnError="1" program="curl" programArguments="-L -k -s 'https://${domain}/.well-known/${tmpFile}' -o '${system_temp_directory}/${tmpFile}'"/>
                         <readFile abortOnError="0" showMessageOnError="0" path="${system_temp_directory}/${tmpFile}" name="result"/>
                         <actionGroup>
                             <actionList>

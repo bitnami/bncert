@@ -82,7 +82,7 @@ Copyrighted by BitRock
                                 </createTimeStamp>
                                 <setInstallerVariable name="installer_http_code" value="0"/>
                                 <!-- httpGet can't handle IPv6 connections -->
-                                <runProgram program="curl" programArguments="-L -k '${url}' -o '${system_temp_directory}/http_get_${timestamp}.txt'" abortOnError="0" showMessageOnError="0"/>
+                                <runProgram program="curl" programArguments="-L -k -s '${url}' -o '${system_temp_directory}/http_get_${timestamp}.txt'" abortOnError="0" showMessageOnError="0"/>
                                 <setInstallerVariable name="valid_url" value="0">
                                     <ruleList>
                                         <compareText text="${installer_http_code}" logic="does_not_equal" value="200"/>
