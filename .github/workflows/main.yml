@@ -102,3 +102,15 @@ jobs:
             aws s3 cp --acl public-read bncert-$version_name-linux-$arch.run $S3_URL/latest/bncert-linux-$arch.run
           done
           aws s3 cp --acl public-read bncert-update.xml $S3_URL/latest/
+  notify:
+    name: Send notification
+    needs:
+      - release
+      - upload
+    if: ${{ always() && (needs.release.result == 'failure' || needs.upload.result == 'failure') }}
+    uses: bitnami/support/.github/workflows/gchat-notification.yml@main
+    with:
+      workflow: ${{ github.workflow }}
+      job-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    secrets:
+      webhook-url: ${{ secrets.GCHAT_CONTENT_ALERTS_WEBHOOK_URL }}
