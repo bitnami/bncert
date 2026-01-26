@@ -268,53 +268,6 @@ installbuilder::setVariable $varName $files
             </actionList>
         </actionDefinition>
 
-        <!-- @function baseAddBndiagnosticMetadata - Add bndiagnostic metadata to properties.ini
-             @param {string} name - Component name
-             @param {string} logsPattern - Pattern to match log files
-             @param {string} confPattern - Pattern to match configuration files
-        -->
-        <actionDefinition name="baseAddBndiagnosticMetadata">
-            <parameterList>
-                <stringParameter name="name"/>
-                <stringParameter name="logsPattern" default=""/>
-                <stringParameter name="confPattern" default=""/>
-                <stringParameter name="aclPattern" default=""/>
-                <stringParameter name="privPattern" default=""/>
-            </parameterList>
-            <actionList>
-                <setInstallerVariable name="components" value=""/>
-                <iniFileGet file="${installdir}/properties.ini" section="Support" key="installed_components" variable="components">
-                    <ruleList>
-                        <fileExists path="${installdir}/properties.ini"/>
-                    </ruleList>
-                </iniFileGet>
-                <iniFileGet file="${installdir}/properties.ini" section="Support" key="installed_components" variable="components"/>
-                <!-- Append, but do not leave weird spaces -->
-                <if>
-                    <conditionRuleList>
-                        <stringTest text="${components}" type="not_empty"/>
-                    </conditionRuleList>
-                    <actionList>
-                        <setInstallerVariable name="components" value="${components} ${name}"/>
-                    </actionList>
-                    <elseActionList>
-                        <setInstallerVariable name="components" value="${name}"/>
-                    </elseActionList>
-                </if>
-                <iniFileSet file="${installdir}/properties.ini" section="Support" key="installed_components" value="${components}"/>
-                <!-- Set logs, conf, acl and priv patterns -->
-                <foreach variables="type" values="logs conf acl priv">
-                    <actionList>
-                        <iniFileSet file="${installdir}/properties.ini" section="Support" key="${name}_${type}" value="${${type}Pattern}">
-                            <ruleList>
-                                <stringTest text="${${type}Pattern}" type="not_empty"/>
-                            </ruleList>
-                        </iniFileSet>
-                    </actionList>
-                </foreach>
-            </actionList>
-        </actionDefinition>
-
       <actionDefinition name="countCharactersFromString">
         <parameterList>
           <stringParameter name="name" />
