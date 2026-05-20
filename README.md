@@ -1,3 +1,6 @@
+> [!IMPORTANT]  
+> This project is now archived and no futher development is expected
+
 [![CI](https://github.com/bitnami/bncert/actions/workflows/main.yml/badge.svg)](https://github.com/bitnami/bncert/actions/workflows/main.yml)
 
 # Bncert
